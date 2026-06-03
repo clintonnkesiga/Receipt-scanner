@@ -22,12 +22,21 @@ async function request(url, options = {}) {
 // --- Auth ---
 export async function login(email, password) {
   const body = new URLSearchParams({ username: email, password });
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  if (!res.ok) throw new Error("Incorrect email or password");
+  let res;
+  try {
+    res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch {
+    // Network/proxy failure — backend almost certainly isn't running.
+    throw new Error("Cannot reach the server. Is the backend running on :8000?");
+  }
+  if (res.status === 401) throw new Error("Incorrect email or password");
+  if (!res.ok) {
+    throw new Error(`Login failed (server error ${res.status}). Is the backend running?`);
+  }
   return res.json(); // { access_token, token_type }
 }
 
