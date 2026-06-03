@@ -16,7 +16,7 @@
     try {
       const { access_token } = await login(email, password);
       setToken(access_token);
-      goto("/");
+      goto("/dashboard");
     } catch (err) {
       error = err.message;
     } finally {
