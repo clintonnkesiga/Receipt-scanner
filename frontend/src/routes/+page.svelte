@@ -1,9 +1,20 @@
 <script>
   import { onMount } from "svelte";
-  import { scanReceipt, saveReceipt, listReceipts, deleteReceipt } from "$lib/api";
+  import { goto } from "$app/navigation";
+  import {
+    scanReceipt,
+    saveReceipt,
+    listReceipts,
+    deleteReceipt,
+    downloadCsv,
+    getMe,
+  } from "$lib/api";
+  import { getToken, logout } from "$lib/auth";
 
   const CATEGORIES = ["grocery", "fuel", "other"];
 
+  let user = $state(null);
+  let ready = $state(false);
   let receipts = $state([]);
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
   let busy = $state(false);
@@ -21,7 +32,33 @@
     }
   }
 
-  onMount(refresh);
+  // Route guard: no token or invalid session -> bounce to /login.
+  onMount(async () => {
+    if (!getToken()) {
+      goto("/login");
+      return;
+    }
+    try {
+      user = await getMe();
+      ready = true;
+      await refresh();
+    } catch {
+      goto("/login");
+    }
+  });
+
+  function onLogout() {
+    logout();
+    goto("/login");
+  }
+
+  async function onExport() {
+    try {
+      await downloadCsv();
+    } catch (err) {
+      error = err.message;
+    }
+  }
 
   async function onUpload(e) {
     const file = e.target.files?.[0];
@@ -71,15 +108,29 @@
   }
 </script>
 
+{#if !ready}
+  <div class="min-h-screen flex items-center justify-center text-slate-400 text-sm">
+    Loading…
+  </div>
+{:else}
 <div class="min-h-screen bg-slate-50 text-slate-800">
   <header class="bg-white border-b sticky top-0 z-10">
     <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
       <h1 class="text-xl font-semibold flex items-center gap-2">
         <span>🧾</span> Receipt Scanner
       </h1>
-      <a href="/api/receipts/export.csv" class="text-sm text-blue-600 hover:underline">
-        Export CSV
-      </a>
+      <div class="flex items-center gap-4 text-sm">
+        <button onclick={onExport} class="text-blue-600 hover:underline">
+          Export CSV
+        </button>
+        <span class="text-slate-400">|</span>
+        <span class="text-slate-600 hidden sm:inline" title={user?.role}>
+          {user?.email}
+        </span>
+        <button onclick={onLogout} class="text-slate-500 hover:text-red-600">
+          Logout
+        </button>
+      </div>
     </div>
   </header>
 
@@ -247,3 +298,4 @@
     </section>
   </main>
 </div>
+{/if}

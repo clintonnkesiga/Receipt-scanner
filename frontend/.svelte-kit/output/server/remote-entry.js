@@ -3,7 +3,7 @@ import { parse } from "devalue";
 import { error, json } from "@sveltejs/kit";
 import { c as create_remote_key, u as unfriendly_hydratable, n as noop, s as stringify, M as MUTATIVE_METHODS, a as create_field_proxy, b as normalize_issue, d as set_nested_value, f as flatten_issues, e as deep_set, g as stringify_remote_arg, h as handle_error_and_jsonify, p as parse_remote_arg } from "./chunks/utils.js";
 import { ValidationError, HttpError, SvelteKitError } from "@sveltejs/kit/internal";
-import { D as DEV } from "./chunks/false.js";
+import { b as browser } from "./chunks/render-context.js";
 import { b as base, a as app_dir, p as prerendering } from "./chunks/server.js";
 function create_validator(validate_or_fn, maybe_fn) {
   if (!maybe_fn) {
@@ -399,7 +399,7 @@ function prerender(validate_or_fn, fn_or_options, maybe_options) {
       const payload = stringify_remote_arg(arg, state.transport);
       const id = __.id;
       const url = `${base}/${app_dir}/remote/${id}${payload ? `/${payload}` : ""}`;
-      if (!state.prerendering && !DEV && !event.isRemoteRequest) {
+      if (!state.prerendering && !browser && !event.isRemoteRequest) {
         try {
           return await get_response(__, payload, state, async () => {
             const cache = get_cache(__, state);

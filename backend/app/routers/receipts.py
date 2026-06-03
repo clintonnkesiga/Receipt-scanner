@@ -12,9 +12,15 @@ from ..config import settings
 from ..database import get_db
 from ..ocr import run_ocr
 from ..parser import parse_receipt
+from ..security import get_current_user
 from .. import models, schemas
 
-router = APIRouter(prefix="/api/receipts", tags=["receipts"])
+# Every receipts endpoint requires a valid JWT.
+router = APIRouter(
+    prefix="/api/receipts",
+    tags=["receipts"],
+    dependencies=[Depends(get_current_user)],
+)
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/tiff"}
 

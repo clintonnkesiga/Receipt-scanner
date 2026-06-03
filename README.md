@@ -41,6 +41,28 @@ DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/receipts
 Tables are created automatically on startup. (For schema migrations later,
 add Alembic — see comment in `app/database.py`.)
 
+### Authentication
+
+The receipt API is protected with JWT bearer auth. Configure these in `backend/.env`:
+
+```
+SECRET_KEY=<long random string>          # python -c "import secrets; print(secrets.token_hex(32))"
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+SUPERADMIN_EMAIL=you@example.com
+SUPERADMIN_PASSWORD=<strong password>
+SUPERADMIN_NAME=Super Admin
+```
+
+Create the super-admin (idempotent):
+
+```bash
+python -m app.seed
+```
+
+Then sign in at the web UI's `/login` page. All `/api/receipts/*` endpoints
+require a valid token; `/api/auth/login` issues one. Swagger's **Authorize**
+button works too (uses the same OAuth2 password flow).
+
 ## Frontend setup
 
 ```bash

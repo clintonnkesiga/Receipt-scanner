@@ -1,5 +1,5 @@
 import { E as ENDPOINT_METHODS, P as PAGE_METHODS, i as negotiate, m as method_not_allowed, h as handle_error_and_jsonify, j as get_status, k as is_form_content_type, l as normalize_error, o as create_replacer, q as get_global_name, r as serialize_uses, t as clarify_devalue_error, v as get_node_type, n as noop, w as escape_html, S as SVELTE_KIT_ASSETS, c as create_remote_key, x as static_error_page, y as redirect_response, p as parse_remote_arg, s as stringify, z as deserialize_binary_form, A as split_remote_key, B as once, C as has_prerendered_path, D as get_set_cookies, T as TRAILING_SLASH_PARAM, I as INVALIDATED_PARAM, F as handle_fatal_error, G as format_server_error } from "./chunks/utils.js";
-import { D as DEV } from "./chunks/false.js";
+import { b as browser } from "./chunks/render-context.js";
 import { json, text, isRedirect, error } from "@sveltejs/kit";
 import { Redirect, SvelteKitError, ActionFailure, HttpError } from "@sveltejs/kit/internal";
 import { with_request_store, merge_tracing, try_get_request_store } from "@sveltejs/kit/internal/server";
@@ -278,7 +278,7 @@ async function handle_action_json_request(event, event_state, options2, server) 
   check_named_default_separate(actions);
   try {
     const data = await call_action(event, event_state, actions);
-    if (DEV) ;
+    if (browser) ;
     if (data instanceof ActionFailure) {
       return action_json({
         type: "failure",
@@ -363,7 +363,7 @@ async function handle_action_request(event, event_state, server) {
   check_named_default_separate(actions);
   try {
     const data = await call_action(event, event_state, actions);
-    if (DEV) ;
+    if (browser) ;
     if (data instanceof ActionFailure) {
       return {
         type: "failure",
@@ -1605,7 +1605,7 @@ async function render_response({
     };
     const fetch2 = globalThis.fetch;
     try {
-      if (DEV) ;
+      if (browser) ;
       const state2 = { ...event_state, is_in_render: true };
       rendered = await with_request_store({ event, state: state2 }, async () => {
         if (relative) override({ base: base$1, assets: assets$1 });
@@ -2607,7 +2607,7 @@ async function render_page(event, event_state, page, options2, manifest, state, 
     const ssr = nodes.ssr();
     const csr = nodes.csr();
     if (ssr === false && !(state.prerendering && should_prerender_data)) {
-      if (DEV && action_result && !event.request.headers.has("x-sveltekit-action")) ;
+      if (browser && action_result && !event.request.headers.has("x-sveltekit-action")) ;
       return await render_response({
         // provide nodes without running load functions so that the styles and
         // fonts are linked in the head before CSR takes over
@@ -3494,12 +3494,12 @@ async function internal_respond(request, options2, manifest, state) {
       if (url.pathname === base || url.pathname === base + "/") {
         trailing_slash = "always";
       } else if (page_nodes) {
-        if (DEV) ;
+        if (browser) ;
         trailing_slash = page_nodes.trailing_slash();
       } else if (route.endpoint) {
         const node = await route.endpoint();
         trailing_slash = node.trailingSlash ?? "never";
-        if (DEV) ;
+        if (browser) ;
       }
       if (!is_data_request) {
         const normalized = normalize_path(url.pathname, trailing_slash);
