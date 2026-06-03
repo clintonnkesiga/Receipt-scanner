@@ -37,6 +37,59 @@ export async function getMe() {
   return res.json();
 }
 
+export async function changePassword(current_password, new_password) {
+  const res = await request("/api/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password, new_password }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(detail || "Could not change password");
+  }
+}
+
+// --- User management (super-admin) ---
+export async function listUsers() {
+  const res = await request("/api/users");
+  if (!res.ok) throw new Error("Could not load users");
+  return res.json();
+}
+
+export async function createUser(payload) {
+  const res = await request("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not create user");
+  }
+  return res.json();
+}
+
+export async function updateUser(id, patch) {
+  const res = await request(`/api/users/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not update user");
+  }
+  return res.json();
+}
+
+export async function deleteUser(id) {
+  const res = await request(`/api/users/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not delete user");
+  }
+}
+
 // --- Receipts ---
 export async function scanReceipt(file) {
   const form = new FormData();

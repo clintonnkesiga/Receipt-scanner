@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # --- Auth ---
@@ -17,6 +17,24 @@ class UserOut(BaseModel):
     full_name: str | None = None
     role: str
     is_active: bool
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    full_name: str | None = None
+    password: str = Field(min_length=8)
+    role: str = "user"
+
+
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 
 class LineItemBase(BaseModel):

@@ -123,6 +123,10 @@
         <button onclick={onExport} class="text-blue-600 hover:underline">
           Export CSV
         </button>
+        {#if user?.role === "superadmin"}
+          <a href="/users" class="text-slate-600 hover:underline">Users</a>
+        {/if}
+        <a href="/account" class="text-slate-600 hover:underline">Account</a>
         <span class="text-slate-400">|</span>
         <span class="text-slate-600 hidden sm:inline" title={user?.role}>
           {user?.email}

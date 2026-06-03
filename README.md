@@ -63,6 +63,15 @@ Then sign in at the web UI's `/login` page. All `/api/receipts/*` endpoints
 require a valid token; `/api/auth/login` issues one. Swagger's **Authorize**
 button works too (uses the same OAuth2 password flow).
 
+**Roles:** `superadmin`, `admin`, `user`.
+
+**User management** (super-admin only) — UI at `/users`, API under `/api/users`:
+list, create, change role, enable/disable, and delete users. A super-admin
+cannot disable, demote, or delete their own account (lock-out protection).
+
+**Change password** — any signed-in user, UI at `/account`, API
+`POST /api/auth/change-password` (requires the current password).
+
 ## Frontend setup
 
 ```bash
