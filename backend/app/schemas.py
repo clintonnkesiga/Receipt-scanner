@@ -72,6 +72,7 @@ class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
     owner_id: int | None = None
+    owner_email: str | None = None
     image_path: str | None = None
     raw_ocr_text: str | None = None
     created_at: datetime
@@ -83,3 +84,30 @@ class ScanResult(BaseModel):
     image_path: str
     raw_ocr_text: str
     parsed: ReceiptCreate
+
+
+# --- Dashboard stats ---
+class CategoryStat(BaseModel):
+    category: str | None = None
+    total: Decimal
+    count: int
+
+
+class MonthStat(BaseModel):
+    month: str  # "YYYY-MM"
+    total: Decimal
+    count: int
+
+
+class CurrencyStat(BaseModel):
+    currency: str | None = None
+    total: Decimal
+    count: int
+
+
+class ReceiptStats(BaseModel):
+    total_spend: Decimal
+    receipt_count: int
+    by_category: list[CategoryStat] = []
+    by_month: list[MonthStat] = []
+    by_currency: list[CurrencyStat] = []

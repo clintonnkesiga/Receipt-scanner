@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { changePassword } from "$lib/api";
   import { requireUser } from "$lib/guard";
+  import PasswordInput from "$lib/components/PasswordInput.svelte";
 
   let user = $state(null);
   let ready = $state(false);
@@ -71,32 +72,29 @@
         <form onsubmit={onSubmit} class="space-y-4">
           <label class="block text-sm">
             <span class="font-medium">Current password</span>
-            <input
-              type="password"
+            <PasswordInput
               bind:value={current}
               required
               autocomplete="current-password"
-              class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+              class="mt-1"
             />
           </label>
           <label class="block text-sm">
             <span class="font-medium">New password</span>
-            <input
-              type="password"
+            <PasswordInput
               bind:value={next}
               required
               autocomplete="new-password"
-              class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+              class="mt-1"
             />
           </label>
           <label class="block text-sm">
             <span class="font-medium">Confirm new password</span>
-            <input
-              type="password"
+            <PasswordInput
               bind:value={confirm}
               required
               autocomplete="new-password"
-              class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+              class="mt-1"
             />
           </label>
           <button

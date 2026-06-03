@@ -8,6 +8,7 @@
     resetUserPassword,
   } from "$lib/api";
   import { requireUser } from "$lib/guard";
+  import PasswordInput from "$lib/components/PasswordInput.svelte";
 
   const ROLES = ["user", "admin", "superadmin"];
 
@@ -160,12 +161,11 @@
           </label>
           <label class="text-sm">
             <span class="font-medium">Password</span>
-            <input
-              type="password"
+            <PasswordInput
               bind:value={form.password}
               required
               minlength="8"
-              class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+              class="mt-1"
             />
           </label>
           <label class="text-sm">
@@ -260,12 +260,13 @@
                   <td colspan="5" class="px-2 py-3">
                     <div class="flex flex-wrap items-center gap-2 text-sm">
                       <span class="font-medium">New password for {u.email}:</span>
-                      <input
-                        type="text"
-                        bind:value={resetValue}
-                        placeholder="min. 8 characters"
-                        class="rounded-lg border border-slate-300 p-2 flex-1 min-w-[12rem]"
-                      />
+                      <div class="flex-1 min-w-[12rem]">
+                        <PasswordInput
+                          bind:value={resetValue}
+                          placeholder="min. 8 characters"
+                          autocomplete="new-password"
+                        />
+                      </div>
                       <button
                         onclick={() => submitReset(u)}
                         class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"

@@ -1,0 +1,12 @@
+# SvelteKit / Vite build output
+.svelte-kit/
+build/
+.output/
+.vercel/
+.vite/
+
+# Dependencies
+node_modules/
+
+# OS / editor
+.DS_Store

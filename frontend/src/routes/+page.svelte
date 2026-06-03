@@ -24,6 +24,11 @@
     receipts.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
   );
 
+  // Admins/super-admins see everyone's receipts, so show whose each one is.
+  const isElevated = $derived(
+    user?.role === "admin" || user?.role === "superadmin",
+  );
+
   async function refresh() {
     try {
       receipts = await listReceipts();
@@ -120,6 +125,7 @@
         <span>🧾</span> Receipt Scanner
       </h1>
       <div class="flex items-center gap-4 text-sm">
+        <a href="/dashboard" class="text-slate-600 hover:underline">Dashboard</a>
         <button onclick={onExport} class="text-blue-600 hover:underline">
           Export CSV
         </button>
@@ -267,6 +273,7 @@
           <thead class="text-left text-slate-500 border-b">
             <tr>
               <th class="py-2">Merchant</th>
+              {#if isElevated}<th>Owner</th>{/if}
               <th>Date</th>
               <th>Category</th>
               <th class="text-right">Total</th>
@@ -277,6 +284,9 @@
             {#each receipts as r (r.id)}
               <tr class="border-b last:border-0 hover:bg-slate-50">
                 <td class="py-2">{r.merchant || "—"}</td>
+                {#if isElevated}
+                  <td class="text-slate-500">{r.owner_email || "—"}</td>
+                {/if}
                 <td>{r.purchase_date || "—"}</td>
                 <td>
                   <span class="text-xs rounded-full px-2 py-0.5 {badgeClass(r.category)}">

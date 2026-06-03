@@ -127,6 +127,12 @@ export async function listReceipts() {
   return res.json();
 }
 
+export async function getStats() {
+  const res = await request(`${BASE}/stats`);
+  if (!res.ok) throw new Error("Could not load stats");
+  return res.json();
+}
+
 export async function deleteReceipt(id) {
   const res = await request(`${BASE}/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Delete failed");

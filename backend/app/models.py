@@ -36,10 +36,16 @@ class Receipt(Base):
     raw_ocr_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    owner: Mapped["User | None"] = relationship()
+
     line_items: Mapped[list["LineItem"]] = relationship(
         back_populates="receipt",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def owner_email(self) -> str | None:
+        return self.owner.email if self.owner else None
 
 
 class LineItem(Base):

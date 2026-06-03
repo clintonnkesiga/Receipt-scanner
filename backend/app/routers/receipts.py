@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import settings
@@ -87,7 +87,10 @@ def list_receipts(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    stmt = select(models.Receipt).options(selectinload(models.Receipt.line_items))
+    stmt = select(models.Receipt).options(
+        selectinload(models.Receipt.line_items),
+        selectinload(models.Receipt.owner),
+    )
     # Regular users only see their own receipts; admins/superadmins see all.
     if not _sees_all(current_user):
         stmt = stmt.where(models.Receipt.owner_id == current_user.id)
@@ -103,21 +106,76 @@ def export_csv(
     current_user: models.User = Depends(get_current_user),
 ):
     """Export receipts (header-level) as CSV — handy for budgeting/taxes."""
-    stmt = select(models.Receipt).order_by(models.Receipt.purchase_date)
+    stmt = (
+        select(models.Receipt)
+        .options(selectinload(models.Receipt.owner))
+        .order_by(models.Receipt.purchase_date)
+    )
     if not _sees_all(current_user):
         stmt = stmt.where(models.Receipt.owner_id == current_user.id)
     rows = db.scalars(stmt).all()
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["id", "merchant", "purchase_date", "total", "currency", "category", "created_at"])
+    writer.writerow(["id", "owner", "merchant", "purchase_date", "total", "currency", "category", "created_at"])
     for r in rows:
-        writer.writerow([r.id, r.merchant, r.purchase_date, r.total, r.currency, r.category, r.created_at])
+        writer.writerow([r.id, r.owner_email, r.merchant, r.purchase_date, r.total, r.currency, r.category, r.created_at])
     buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=receipts.csv"},
+    )
+
+
+@router.get("/stats", response_model=schemas.ReceiptStats)
+def stats(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Aggregated spend for the dashboard, scoped to what the user may see."""
+    R = models.Receipt
+    scope = [] if _sees_all(current_user) else [R.owner_id == current_user.id]
+    total = func.coalesce(func.sum(R.total), 0)
+
+    overall = db.execute(
+        select(total, func.count(R.id)).where(*scope)
+    ).one()
+
+    by_category = db.execute(
+        select(R.category, total, func.count(R.id))
+        .where(*scope)
+        .group_by(R.category)
+        .order_by(total.desc())
+    ).all()
+
+    by_currency = db.execute(
+        select(R.currency, total, func.count(R.id))
+        .where(*scope)
+        .group_by(R.currency)
+        .order_by(total.desc())
+    ).all()
+
+    month = func.to_char(R.purchase_date, "YYYY-MM")
+    by_month = db.execute(
+        select(month, total, func.count(R.id))
+        .where(*scope, R.purchase_date.is_not(None))
+        .group_by(month)
+        .order_by(month)
+    ).all()
+
+    return schemas.ReceiptStats(
+        total_spend=overall[0],
+        receipt_count=overall[1],
+        by_category=[
+            schemas.CategoryStat(category=c, total=t, count=n) for c, t, n in by_category
+        ],
+        by_currency=[
+            schemas.CurrencyStat(currency=c, total=t, count=n) for c, t, n in by_currency
+        ],
+        by_month=[
+            schemas.MonthStat(month=m, total=t, count=n) for m, t, n in by_month
+        ],
     )
 
 

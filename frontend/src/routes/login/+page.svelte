@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { login } from "$lib/api";
   import { setToken } from "$lib/auth";
+  import PasswordInput from "$lib/components/PasswordInput.svelte";
 
   let email = $state("");
   let password = $state("");
@@ -53,13 +54,12 @@
 
       <label class="block text-sm">
         <span class="font-medium">Password</span>
-        <input
-          type="password"
+        <PasswordInput
           bind:value={password}
           required
           placeholder="Enter password"
           autocomplete="current-password"
-          class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+          class="mt-1"
         />
       </label>
 
