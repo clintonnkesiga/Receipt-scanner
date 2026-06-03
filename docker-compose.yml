@@ -1,0 +1,19 @@
+# Optional: spin up a local PostgreSQL for development.
+#   docker compose up -d
+# Then set in backend/.env:
+#   DATABASE_URL=postgresql+psycopg2://receipts:receipts@localhost:5432/receipts
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: receipts
+      POSTGRES_PASSWORD: receipts
+      POSTGRES_DB: receipts
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
