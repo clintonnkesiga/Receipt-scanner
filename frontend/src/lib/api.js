@@ -90,6 +90,18 @@ export async function deleteUser(id) {
   }
 }
 
+export async function resetUserPassword(id, new_password) {
+  const res = await request(`/api/users/${id}/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_password }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not reset password");
+  }
+}
+
 // --- Receipts ---
 export async function scanReceipt(file) {
   const form = new FormData();

@@ -1,1 +1,0 @@
-import{g as r}from"./skh5aXL6.js";import{g as t,a as o}from"./wkZOBESY.js";async function i({superadmin:n=!1}={}){if(!t())return r("/login"),null;try{const e=await o();return n&&e.role!=="superadmin"?(r("/"),null):e}catch{return r("/login"),null}}export{i as r};

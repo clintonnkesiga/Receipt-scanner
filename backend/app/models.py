@@ -23,6 +23,10 @@ class Receipt(Base):
     __tablename__ = "receipts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # The user who created the receipt. Kept (set NULL) if that user is deleted.
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
     merchant: Mapped[str | None] = mapped_column(String(255))
     purchase_date: Mapped[date | None] = mapped_column(Date)
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))

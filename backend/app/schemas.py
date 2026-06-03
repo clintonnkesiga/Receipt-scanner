@@ -37,6 +37,10 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8)
+
+
 class LineItemBase(BaseModel):
     description: str | None = None
     quantity: Decimal | None = None
@@ -67,6 +71,7 @@ class ReceiptCreate(ReceiptBase):
 class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    owner_id: int | None = None
     image_path: str | None = None
     raw_ocr_text: str | None = None
     created_at: datetime

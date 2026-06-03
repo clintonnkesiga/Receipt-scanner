@@ -74,6 +74,20 @@ def update_user(
     return user
 
 
+@router.post("/{user_id}/reset-password", status_code=204)
+def reset_password(
+    user_id: int,
+    payload: schemas.AdminPasswordReset,
+    db: Session = Depends(get_db),
+):
+    """Super-admin sets a new password for any user (forgot-password recovery)."""
+    user = db.get(models.User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    user.hashed_password = hash_password(payload.new_password)
+    db.commit()
+
+
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
     user_id: int,

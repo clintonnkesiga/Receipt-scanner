@@ -16,17 +16,23 @@ from ..security import get_current_user
 from .. import models, schemas
 
 # Every receipts endpoint requires a valid JWT.
-router = APIRouter(
-    prefix="/api/receipts",
-    tags=["receipts"],
-    dependencies=[Depends(get_current_user)],
-)
+router = APIRouter(prefix="/api/receipts", tags=["receipts"])
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/tiff"}
 
+# Roles that can see/manage every user's receipts.
+ELEVATED_ROLES = {"admin", "superadmin"}
+
+
+def _sees_all(user: models.User) -> bool:
+    return user.role in ELEVATED_ROLES
+
 
 @router.post("/scan", response_model=schemas.ScanResult)
-async def scan_receipt(file: UploadFile = File(...)):
+async def scan_receipt(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+):
     """Upload an image, run OCR + parsing, return parsed fields for review.
 
     Nothing is saved to the DB yet — the user confirms/corrects, then POSTs
@@ -52,9 +58,14 @@ async def scan_receipt(file: UploadFile = File(...)):
 
 
 @router.post("", response_model=schemas.ReceiptOut, status_code=201)
-def create_receipt(payload: schemas.ReceiptCreate, db: Session = Depends(get_db)):
-    """Persist a reviewed/corrected receipt."""
+def create_receipt(
+    payload: schemas.ReceiptCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Persist a reviewed/corrected receipt, owned by the current user."""
     receipt = models.Receipt(
+        owner_id=current_user.id,
         merchant=payload.merchant,
         purchase_date=payload.purchase_date,
         total=payload.total,
@@ -71,8 +82,15 @@ def create_receipt(payload: schemas.ReceiptCreate, db: Session = Depends(get_db)
 
 
 @router.get("", response_model=list[schemas.ReceiptOut])
-def list_receipts(category: str | None = None, db: Session = Depends(get_db)):
+def list_receipts(
+    category: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     stmt = select(models.Receipt).options(selectinload(models.Receipt.line_items))
+    # Regular users only see their own receipts; admins/superadmins see all.
+    if not _sees_all(current_user):
+        stmt = stmt.where(models.Receipt.owner_id == current_user.id)
     if category:
         stmt = stmt.where(models.Receipt.category == category)
     stmt = stmt.order_by(models.Receipt.created_at.desc())
@@ -80,9 +98,16 @@ def list_receipts(category: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.get("/export.csv")
-def export_csv(db: Session = Depends(get_db)):
-    """Export all receipts (header-level) as CSV — handy for budgeting/taxes."""
-    rows = db.scalars(select(models.Receipt).order_by(models.Receipt.purchase_date)).all()
+def export_csv(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Export receipts (header-level) as CSV — handy for budgeting/taxes."""
+    stmt = select(models.Receipt).order_by(models.Receipt.purchase_date)
+    if not _sees_all(current_user):
+        stmt = stmt.where(models.Receipt.owner_id == current_user.id)
+    rows = db.scalars(stmt).all()
+
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["id", "merchant", "purchase_date", "total", "currency", "category", "created_at"])
@@ -96,18 +121,31 @@ def export_csv(db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{receipt_id}", response_model=schemas.ReceiptOut)
-def get_receipt(receipt_id: int, db: Session = Depends(get_db)):
+def _get_owned_or_404(receipt_id: int, db: Session, user: models.User) -> models.Receipt:
+    """Fetch a receipt the user is allowed to see, else 404 (don't leak existence)."""
     receipt = db.get(models.Receipt, receipt_id)
     if receipt is None:
+        raise HTTPException(404, "Receipt not found")
+    if not _sees_all(user) and receipt.owner_id != user.id:
         raise HTTPException(404, "Receipt not found")
     return receipt
 
 
+@router.get("/{receipt_id}", response_model=schemas.ReceiptOut)
+def get_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return _get_owned_or_404(receipt_id, db, current_user)
+
+
 @router.delete("/{receipt_id}", status_code=204)
-def delete_receipt(receipt_id: int, db: Session = Depends(get_db)):
-    receipt = db.get(models.Receipt, receipt_id)
-    if receipt is None:
-        raise HTTPException(404, "Receipt not found")
+def delete_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
     db.delete(receipt)
     db.commit()

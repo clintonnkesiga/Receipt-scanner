@@ -1,6 +1,12 @@
 <script>
   import { onMount } from "svelte";
-  import { listUsers, createUser, updateUser, deleteUser } from "$lib/api";
+  import {
+    listUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+    resetUserPassword,
+  } from "$lib/api";
   import { requireUser } from "$lib/guard";
 
   const ROLES = ["user", "admin", "superadmin"];
@@ -9,6 +15,11 @@
   let ready = $state(false);
   let users = $state([]);
   let error = $state("");
+  let success = $state("");
+
+  // Inline password-reset state (which row is open + its new value).
+  let resetId = $state(null);
+  let resetValue = $state("");
 
   // New-user form
   let form = $state({ email: "", full_name: "", password: "", role: "user" });
@@ -76,6 +87,33 @@
       error = err.message;
     }
   }
+
+  function startReset(u) {
+    resetId = u.id;
+    resetValue = "";
+    error = "";
+    success = "";
+  }
+
+  function cancelReset() {
+    resetId = null;
+    resetValue = "";
+  }
+
+  async function submitReset(u) {
+    if (resetValue.length < 8) {
+      error = "New password must be at least 8 characters";
+      return;
+    }
+    error = "";
+    try {
+      await resetUserPassword(u.id, resetValue);
+      success = `Password reset for ${u.email}.`;
+      cancelReset();
+    } catch (err) {
+      error = err.message;
+    }
+  }
 </script>
 
 {#if ready}
@@ -92,6 +130,11 @@
       {#if error}
         <div class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm">
           {error}
+        </div>
+      {/if}
+      {#if success}
+        <div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg p-3 text-sm">
+          {success}
         </div>
       {/if}
 
@@ -189,7 +232,13 @@
                     {u.is_active ? "active" : "disabled"}
                   </span>
                 </td>
-                <td class="text-right space-x-3">
+                <td class="text-right space-x-3 whitespace-nowrap">
+                  <button
+                    onclick={() => startReset(u)}
+                    class="text-xs text-blue-600 hover:underline"
+                  >
+                    reset pw
+                  </button>
                   {#if u.id !== me?.id}
                     <button
                       onclick={() => onToggleActive(u)}
@@ -203,11 +252,36 @@
                     >
                       delete
                     </button>
-                  {:else}
-                    <span class="text-xs text-slate-300">—</span>
                   {/if}
                 </td>
               </tr>
+              {#if resetId === u.id}
+                <tr class="bg-slate-50">
+                  <td colspan="5" class="px-2 py-3">
+                    <div class="flex flex-wrap items-center gap-2 text-sm">
+                      <span class="font-medium">New password for {u.email}:</span>
+                      <input
+                        type="text"
+                        bind:value={resetValue}
+                        placeholder="min. 8 characters"
+                        class="rounded-lg border border-slate-300 p-2 flex-1 min-w-[12rem]"
+                      />
+                      <button
+                        onclick={() => submitReset(u)}
+                        class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
+                      >
+                        Set password
+                      </button>
+                      <button
+                        onclick={cancelReset}
+                        class="px-3 py-2 rounded-lg border hover:bg-white"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/if}
             {/each}
           </tbody>
         </table>
