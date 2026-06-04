@@ -14,7 +14,15 @@
   const maxMonth = $derived(
     Math.max(1, ...(stats?.by_month ?? []).map((m) => Number(m.total) || 0)),
   );
+  const maxMerchant = $derived(
+    Math.max(1, ...(stats?.top_merchants ?? []).map((m) => Number(m.total) || 0)),
+  );
   const multiCurrency = $derived((stats?.by_currency ?? []).length > 1);
+
+  const trend = $derived(stats?.month_trend ?? null);
+
+  const fmtDate = (s) =>
+    s ? new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
 
   function catColor(category) {
     return category === "fuel"
@@ -69,6 +77,47 @@
         </div>
       </section>
 
+      <!-- Secondary cards: trend + recent activity -->
+      <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-xl shadow-sm p-5">
+          <div class="text-sm text-slate-500">This month</div>
+          <div class="text-2xl font-semibold mt-1">{fmt(trend?.current)}</div>
+          {#if trend && trend.change_pct != null}
+            <div
+              class="text-xs mt-1 {trend.change_pct > 0 ? 'text-red-600' : trend.change_pct < 0 ? 'text-emerald-600' : 'text-slate-400'}"
+            >
+              {trend.change_pct > 0 ? "▲" : trend.change_pct < 0 ? "▼" : ""}
+              {Math.abs(trend.change_pct).toFixed(0)}% vs last month
+            </div>
+          {:else}
+            <div class="text-xs text-slate-400 mt-1">no prior month to compare</div>
+          {/if}
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-5">
+          <div class="text-sm text-slate-500">Added (last 30 days)</div>
+          <div class="text-2xl font-semibold mt-1">{stats.recent_count}</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-5">
+          <div class="text-sm text-slate-500">Last receipt</div>
+          <div class="text-2xl font-semibold mt-1">{fmtDate(stats.last_receipt_date)}</div>
+        </div>
+      </section>
+
+      <!-- Largest receipt -->
+      {#if stats.largest_receipt}
+        {@const lr = stats.largest_receipt}
+        <section class="bg-white rounded-xl shadow-sm p-5">
+          <h2 class="font-semibold mb-1">Largest receipt</h2>
+          <div class="flex items-baseline justify-between flex-wrap gap-2">
+            <div class="text-slate-600">
+              {lr.merchant || "Unknown merchant"}
+              <span class="text-slate-400 text-sm">· {fmtDate(lr.purchase_date)}</span>
+            </div>
+            <div class="text-xl font-semibold">{lr.currency || ""} {fmt(lr.total)}</div>
+          </div>
+        </section>
+      {/if}
+
       <!-- By currency -->
       <section class="bg-white rounded-xl shadow-sm p-5">
         <h2 class="font-semibold mb-3">By currency</h2>
@@ -103,6 +152,29 @@
           {/each}
         </div>
       </section>
+
+      <!-- Top merchants -->
+      {#if stats.top_merchants.length > 0}
+        <section class="bg-white rounded-xl shadow-sm p-5">
+          <h2 class="font-semibold mb-4">Top merchants</h2>
+          <div class="space-y-3">
+            {#each stats.top_merchants as m}
+              <div>
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="truncate pr-2">{m.merchant || "—"}</span>
+                  <span class="text-slate-600 whitespace-nowrap">{fmt(m.total)} <span class="text-xs text-slate-400">({m.count})</span></span>
+                </div>
+                <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    class="h-full rounded-full bg-violet-400"
+                    style="width: {(Number(m.total) / maxMerchant) * 100}%"
+                  ></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
 
       <!-- By month -->
       <section class="bg-white rounded-xl shadow-sm p-5">

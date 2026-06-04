@@ -2,6 +2,7 @@ import csv
 import io
 import os
 import uuid
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -192,9 +193,47 @@ def stats(
         .order_by(month)
     ).all()
 
+    top_merchants = db.execute(
+        select(R.merchant, total, func.count(R.id))
+        .where(*scope, R.merchant.is_not(None), R.merchant != "")
+        .group_by(R.merchant)
+        .order_by(total.desc())
+        .limit(8)
+    ).all()
+
+    largest = db.execute(
+        select(R.id, R.merchant, R.total, R.currency, R.purchase_date)
+        .where(*scope, R.total.is_not(None))
+        .order_by(R.total.desc())
+        .limit(1)
+    ).first()
+
+    # Recent activity: receipts created in the last 30 days, and the most
+    # recent purchase date on record.
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    recent_count = db.execute(
+        select(func.count(R.id)).where(*scope, R.created_at >= since)
+    ).scalar_one()
+    last_receipt_date = db.execute(
+        select(func.max(R.purchase_date)).where(*scope)
+    ).scalar_one()
+
+    # Month-over-month trend, keyed off calendar months from by_month.
+    month_totals = {m: t for m, t, _ in by_month}
+    today = date.today()
+    cur_key = today.strftime("%Y-%m")
+    prev_key = today.replace(day=1) - timedelta(days=1)
+    prev_key = prev_key.strftime("%Y-%m")
+    cur = Decimal(month_totals.get(cur_key, 0))
+    prev = Decimal(month_totals.get(prev_key, 0))
+    change_pct = float((cur - prev) / prev * 100) if prev else None
+    month_trend = schemas.MonthTrend(current=cur, previous=prev, change_pct=change_pct)
+
     return schemas.ReceiptStats(
         total_spend=overall[0],
         receipt_count=overall[1],
+        recent_count=recent_count,
+        last_receipt_date=last_receipt_date,
         by_category=[
             schemas.CategoryStat(category=c, total=t, count=n) for c, t, n in by_category
         ],
@@ -204,6 +243,21 @@ def stats(
         by_month=[
             schemas.MonthStat(month=m, total=t, count=n) for m, t, n in by_month
         ],
+        top_merchants=[
+            schemas.MerchantStat(merchant=m, total=t, count=n) for m, t, n in top_merchants
+        ],
+        largest_receipt=(
+            schemas.LargestReceipt(
+                id=largest[0],
+                merchant=largest[1],
+                total=largest[2],
+                currency=largest[3],
+                purchase_date=largest[4],
+            )
+            if largest
+            else None
+        ),
+        month_trend=month_trend,
     )
 
 

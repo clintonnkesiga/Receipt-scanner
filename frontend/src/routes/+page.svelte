@@ -10,6 +10,7 @@
     getReceiptImageUrl,
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
+  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
 
   let categories = $state([]); // managed category names, from the API
   let filter = $state(""); // active category filter on the history list ("" = all)
@@ -136,13 +137,21 @@
     }
   }
 
-  async function onDelete(id) {
-    if (!confirm("Delete this receipt?")) return;
+  // Receipt pending deletion (drives the confirmation dialog); null = closed.
+  let pendingDelete = $state(null);
+  let deleting = $state(false);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    deleting = true;
     try {
-      await deleteReceipt(id);
+      await deleteReceipt(pendingDelete.id);
+      pendingDelete = null;
       await refresh();
     } catch (err) {
       error = err.message;
+    } finally {
+      deleting = false;
     }
   }
 
@@ -360,7 +369,7 @@
                   </button>
                 {/if}
                 <button
-                  onclick={() => onDelete(r.id)}
+                  onclick={() => (pendingDelete = r)}
                   class="text-red-600 hover:underline text-xs"
                 >
                   delete
@@ -402,3 +411,17 @@
     {/if}
   </div>
 {/if}
+
+<!-- Delete confirmation -->
+<ConfirmDialog
+  open={pendingDelete != null}
+  danger
+  busy={deleting}
+  title="Delete this receipt?"
+  message={pendingDelete
+    ? `“${pendingDelete.merchant || "Untitled"}” will be permanently removed. This can’t be undone.`
+    : ""}
+  confirmLabel={deleting ? "Deleting…" : "Delete"}
+  onconfirm={confirmDelete}
+  oncancel={() => (pendingDelete = null)}
+/>

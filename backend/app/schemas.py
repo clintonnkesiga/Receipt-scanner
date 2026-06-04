@@ -119,9 +119,35 @@ class CurrencyStat(BaseModel):
     count: int
 
 
+class MerchantStat(BaseModel):
+    merchant: str | None = None
+    total: Decimal
+    count: int
+
+
+class LargestReceipt(BaseModel):
+    id: int
+    merchant: str | None = None
+    total: Decimal
+    currency: str | None = None
+    purchase_date: date | None = None
+
+
+class MonthTrend(BaseModel):
+    """This month's spend vs last month (calendar months)."""
+    current: Decimal
+    previous: Decimal
+    change_pct: float | None = None  # None when previous is 0 (no baseline)
+
+
 class ReceiptStats(BaseModel):
     total_spend: Decimal
     receipt_count: int
+    recent_count: int = 0  # receipts added in the last 30 days
+    last_receipt_date: date | None = None
     by_category: list[CategoryStat] = []
     by_month: list[MonthStat] = []
     by_currency: list[CurrencyStat] = []
+    top_merchants: list[MerchantStat] = []
+    largest_receipt: LargestReceipt | None = None
+    month_trend: MonthTrend | None = None
