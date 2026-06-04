@@ -11,9 +11,11 @@
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+  import ReceiptThumb from "$lib/components/ReceiptThumb.svelte";
 
   let categories = $state([]); // managed category names, from the API
   let filter = $state(""); // active category filter on the history list ("" = all)
+  let view = $state("table"); // "table" | "gallery"
 
   let receipts = $state([]);
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
@@ -74,6 +76,20 @@
   const isElevated = $derived(
     $currentUser?.role === "admin" || $currentUser?.role === "superadmin",
   );
+
+  // Gallery view groups receipts by category, sorted by name; "uncategorized" last.
+  const grouped = $derived.by(() => {
+    const map = new Map();
+    for (const r of receipts) {
+      const key = r.category || "uncategorized";
+      (map.get(key) ?? map.set(key, []).get(key)).push(r);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      if (a === "uncategorized") return 1;
+      if (b === "uncategorized") return -1;
+      return a.localeCompare(b);
+    });
+  });
 
   async function refresh() {
     try {
@@ -164,7 +180,7 @@
   }
 </script>
 
-<div class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+<div class="w-full px-6 py-8 space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-semibold">Receipts</h1>
     <button
@@ -307,6 +323,23 @@
     <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
       <h2 class="font-semibold">History ({receipts.length})</h2>
       <div class="flex items-center gap-3">
+        <!-- Table / Gallery view toggle -->
+        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+          <button
+            type="button"
+            onclick={() => (view = "table")}
+            class="px-3 py-1.5 {view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+          >
+            Table
+          </button>
+          <button
+            type="button"
+            onclick={() => (view = "gallery")}
+            class="px-3 py-1.5 border-l border-slate-300 {view === 'gallery' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+          >
+            Gallery
+          </button>
+        </div>
         <label class="text-sm text-slate-500 flex items-center gap-2">
           Category
           <select
@@ -331,6 +364,22 @@
       <p class="text-sm text-slate-500">
         {filter ? `No receipts in “${filter}”.` : "No receipts yet — upload one above."}
       </p>
+    {:else if view === "gallery"}
+      <div class="space-y-8">
+        {#each grouped as [cat, items] (cat)}
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xs rounded-full px-2 py-0.5 capitalize {badgeClass(cat)}">{cat}</span>
+              <span class="text-xs text-slate-400">{items.length}</span>
+            </div>
+            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+              {#each items as r (r.id)}
+                <ReceiptThumb receipt={r} onopen={openImage} showOwner={isElevated} />
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
     {:else}
       <table class="w-full text-sm">
         <thead class="text-left text-slate-500 border-b">

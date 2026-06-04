@@ -117,7 +117,7 @@
   }
 </script>
 
-<div class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+<div class="w-full px-6 py-8 space-y-6">
   <h1 class="text-2xl font-semibold">User management</h1>
 
   {#if error}
