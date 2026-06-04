@@ -3,7 +3,7 @@
 
   // A single gallery card: lazily loads the (auth-protected) receipt image as an
   // object URL and revokes it on cleanup. Clicking calls `onopen(receipt)`.
-  let { receipt, onopen, showOwner = false } = $props();
+  let { receipt, onopen, ondelete, showOwner = false } = $props();
 
   let url = $state(null);
   let loading = $state(true);
@@ -54,13 +54,16 @@
   );
 </script>
 
-<button
-  type="button"
-  onclick={() => onopen?.(receipt)}
-  class="group block text-left bg-white rounded-xl border border-slate-200 overflow-hidden
-         hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-blue-400"
+<div
+  class="group relative bg-white rounded-xl border border-slate-200 overflow-hidden
+         hover:shadow-md transition focus-within:ring-2 focus-within:ring-blue-400"
 >
-  <div class="aspect-square bg-slate-100 flex items-center justify-center overflow-hidden">
+  <button
+    type="button"
+    onclick={() => onopen?.(receipt)}
+    class="block w-full text-left focus:outline-none"
+  >
+    <div class="aspect-square bg-slate-100 flex items-center justify-center overflow-hidden">
     {#if loading}
       <div class="text-slate-300 text-[10px] animate-pulse">Loading…</div>
     {:else if url}
@@ -76,12 +79,30 @@
       </div>
     {/if}
   </div>
-  <div class="p-2">
-    <div class="font-medium text-xs truncate">{receipt.merchant || "—"}</div>
-    {#if showOwner}
-      <div class="text-[10px] text-slate-400 truncate">{receipt.owner_email || "—"}</div>
-    {/if}
-    <div class="text-[10px] text-slate-500">{receipt.purchase_date || "—"}</div>
-    <div class="text-xs font-semibold tabular-nums">{fmtTotal}</div>
-  </div>
-</button>
+    <div class="p-2">
+      <div class="font-medium text-xs truncate">{receipt.merchant || "—"}</div>
+      {#if showOwner}
+        <div class="text-[10px] text-slate-400 truncate">{receipt.owner_email || "—"}</div>
+      {/if}
+      <div class="text-[10px] text-slate-500">{receipt.purchase_date || "—"}</div>
+      <div class="text-xs font-semibold tabular-nums">{fmtTotal}</div>
+    </div>
+  </button>
+
+  {#if ondelete}
+    <button
+      type="button"
+      aria-label="Delete receipt"
+      title="Delete receipt"
+      onclick={(e) => { e.stopPropagation(); ondelete(receipt); }}
+      class="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 text-red-600 shadow-sm
+             flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100
+             hover:bg-red-600 hover:text-white transition"
+    >
+      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" />
+        <path d="M10 11v6M14 11v6" />
+      </svg>
+    </button>
+  {/if}
+</div>

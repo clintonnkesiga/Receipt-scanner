@@ -15,7 +15,7 @@
 
   let categories = $state([]); // managed category names, from the API
   let filter = $state(""); // active category filter on the history list ("" = all)
-  let view = $state("table"); // "table" | "gallery"
+  let view = $state("gallery"); // "table" | "gallery"
 
   let receipts = $state([]);
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
@@ -425,7 +425,12 @@
             </div>
             <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
               {#each items as r (r.id)}
-                <ReceiptThumb receipt={r} onopen={openImage} showOwner={isElevated} />
+                <ReceiptThumb
+                  receipt={r}
+                  onopen={openImage}
+                  ondelete={(r) => (pendingDelete = r)}
+                  showOwner={isElevated}
+                />
               {/each}
             </div>
           </div>
