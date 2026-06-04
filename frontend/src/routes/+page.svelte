@@ -37,6 +37,7 @@
   let viewerUrl = $state(null);
   let viewerIsPdf = $state(false);
   let viewerLoading = $state(false);
+  let viewerIndex = $state(-1); // index into orderedReceipts; -1 = closed
 
   const isPdfPath = (path) => !!path && path.toLowerCase().endsWith(".pdf");
 
@@ -46,21 +47,65 @@
     previewIsPdf = false;
   }
 
-  async function openImage(receipt) {
+  // Load the receipt at `index` in the displayed order into the viewer.
+  // A token guards against out-of-order responses when stepping quickly.
+  let viewerToken = 0;
+  async function openAt(index) {
+    if (index < 0 || index >= orderedReceipts.length) return;
+    const receipt = orderedReceipts[index];
+    const token = ++viewerToken;
+    viewerIndex = index;
     viewerIsPdf = isPdfPath(receipt.image_path);
+    if (viewerUrl) {
+      URL.revokeObjectURL(viewerUrl);
+      viewerUrl = null;
+    }
     viewerLoading = true;
     try {
-      viewerUrl = await getReceiptImageUrl(receipt.id);
+      const url = await getReceiptImageUrl(receipt.id);
+      if (token !== viewerToken) {
+        URL.revokeObjectURL(url); // a newer navigation superseded this load
+        return;
+      }
+      viewerUrl = url;
     } catch (err) {
-      error = err.message;
+      if (token === viewerToken) error = err.message;
     } finally {
-      viewerLoading = false;
+      if (token === viewerToken) viewerLoading = false;
     }
   }
 
+  function openImage(receipt) {
+    openAt(orderedReceipts.indexOf(receipt));
+  }
+
+  const canPrev = $derived(viewerIndex > 0);
+  const canNext = $derived(
+    viewerIndex >= 0 && viewerIndex < orderedReceipts.length - 1,
+  );
+  const viewerReceipt = $derived(
+    viewerIndex >= 0 ? orderedReceipts[viewerIndex] : null,
+  );
+
+  function prevReceipt() {
+    if (canPrev) openAt(viewerIndex - 1);
+  }
+  function nextReceipt() {
+    if (canNext) openAt(viewerIndex + 1);
+  }
+
+  function onViewerKey(e) {
+    if (viewerIndex < 0 && !viewerLoading) return;
+    if (e.key === "Escape") closeViewer();
+    else if (e.key === "ArrowLeft") prevReceipt();
+    else if (e.key === "ArrowRight") nextReceipt();
+  }
+
   function closeViewer() {
+    viewerToken++; // invalidate any in-flight load
     if (viewerUrl) URL.revokeObjectURL(viewerUrl);
     viewerUrl = null;
+    viewerIndex = -1;
   }
 
   function discardScan() {
@@ -90,6 +135,12 @@
       return a.localeCompare(b);
     });
   });
+
+  // The order the viewer steps through: grouped order in gallery, list order
+  // in the table — so prev/next matches what the user sees on screen.
+  const orderedReceipts = $derived(
+    view === "gallery" ? grouped.flatMap(([, items]) => items) : receipts,
+  );
 
   async function refresh() {
     try {
@@ -432,7 +483,7 @@
   </section>
 </div>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && closeViewer()} />
+<svelte:window onkeydown={onViewerKey} />
 
 <!-- Full-size image viewer -->
 {#if viewerUrl || viewerLoading}
@@ -441,6 +492,30 @@
     class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
     onclick={closeViewer}
   >
+    <!-- Caption: position + merchant -->
+    {#if viewerReceipt}
+      <div class="absolute top-4 left-1/2 -translate-x-1/2 text-white/90 text-sm flex items-center gap-2">
+        <span class="tabular-nums">{viewerIndex + 1} / {orderedReceipts.length}</span>
+        {#if viewerReceipt.merchant}
+          <span class="text-white/50">·</span>
+          <span class="truncate max-w-[40vw]">{viewerReceipt.merchant}</span>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Previous -->
+    {#if canPrev}
+      <button
+        type="button"
+        aria-label="Previous receipt"
+        onclick={(e) => { e.stopPropagation(); prevReceipt(); }}
+        class="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full
+               bg-white/10 hover:bg-white/25 text-white text-3xl leading-none flex items-center justify-center transition"
+      >
+        ‹
+      </button>
+    {/if}
+
     {#if viewerLoading}
       <div class="text-white text-sm animate-pulse">Loading…</div>
     {:else if viewerIsPdf}
@@ -454,9 +529,22 @@
       <img
         src={viewerUrl}
         alt="Receipt"
-        class="max-h-[90vh] max-w-full rounded-lg shadow-2xl"
+        class="max-h-[90vh] max-w-[80vw] rounded-lg shadow-2xl"
         onclick={(e) => e.stopPropagation()}
       />
+    {/if}
+
+    <!-- Next -->
+    {#if canNext}
+      <button
+        type="button"
+        aria-label="Next receipt"
+        onclick={(e) => { e.stopPropagation(); nextReceipt(); }}
+        class="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full
+               bg-white/10 hover:bg-white/25 text-white text-3xl leading-none flex items-center justify-center transition"
+      >
+        ›
+      </button>
     {/if}
   </div>
 {/if}
