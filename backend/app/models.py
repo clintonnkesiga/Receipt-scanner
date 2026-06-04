@@ -19,6 +19,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Category(Base):
+    """A user-managed receipt category (e.g. grocery, fuel, restaurant).
+
+    Receipts store the category *name* as a plain string (Receipt.category),
+    so this table is the editable list the UI offers — renaming one cascades
+    to the receipts that use it (handled in the router).
+    """
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Receipt(Base):
     __tablename__ = "receipts"
 
@@ -29,7 +43,7 @@ class Receipt(Base):
     )
     merchant: Mapped[str | None] = mapped_column(String(255))
     purchase_date: Mapped[date | None] = mapped_column(Date)
-    total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     currency: Mapped[str | None] = mapped_column(String(8))
     category: Mapped[str | None] = mapped_column(String(32))  # grocery | fuel | other
     image_path: Mapped[str | None] = mapped_column(String(512))
@@ -55,7 +69,7 @@ class LineItem(Base):
     receipt_id: Mapped[int] = mapped_column(ForeignKey("receipts.id", ondelete="CASCADE"))
     description: Mapped[str | None] = mapped_column(String(255))
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
-    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
 
     receipt: Mapped["Receipt"] = relationship(back_populates="line_items")

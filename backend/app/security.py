@@ -64,3 +64,11 @@ def require_superadmin(
     if user.role != "superadmin":
         raise HTTPException(status_code=403, detail="Requires super-admin privileges")
     return user
+
+
+def require_admin(
+    user: models.User = Depends(get_current_user),
+) -> models.User:
+    if user.role not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Requires admin privileges")
+    return user

@@ -2,9 +2,10 @@ import csv
 import io
 import os
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
 
@@ -18,7 +19,10 @@ from .. import models, schemas
 # Every receipts endpoint requires a valid JWT.
 router = APIRouter(prefix="/api/receipts", tags=["receipts"])
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/tiff"}
+ALLOWED_TYPES = {
+    "image/jpeg", "image/png", "image/webp", "image/heic", "image/tiff",
+    "application/pdf",
+}
 
 # Roles that can see/manage every user's receipts.
 ELEVATED_ROLES = {"admin", "superadmin"}
@@ -26,6 +30,22 @@ ELEVATED_ROLES = {"admin", "superadmin"}
 
 def _sees_all(user: models.User) -> bool:
     return user.role in ELEVATED_ROLES
+
+
+# Max absolute value storable in the amount columns: NUMERIC(14,2) -> < 10^12.
+_MONEY_MAX = Decimal(10) ** 12
+_QTY_MAX = Decimal(10) ** 9  # quantity is NUMERIC(12,3) -> < 10^9
+
+
+def _fit(value: Decimal | None, max_abs: Decimal = _MONEY_MAX) -> Decimal | None:
+    """Drop OCR-garbage numbers that would overflow the DB column (store NULL)
+    instead of 500-ing the whole save."""
+    if value is None:
+        return None
+    try:
+        return value if abs(value) < max_abs else None
+    except (TypeError, ArithmeticError):
+        return None
 
 
 @router.post("/scan", response_model=schemas.ScanResult)
@@ -68,12 +88,20 @@ def create_receipt(
         owner_id=current_user.id,
         merchant=payload.merchant,
         purchase_date=payload.purchase_date,
-        total=payload.total,
+        total=_fit(payload.total),
         currency=payload.currency,
         category=payload.category,
         image_path=payload.image_path,
         raw_ocr_text=payload.raw_ocr_text,
-        line_items=[models.LineItem(**li.model_dump()) for li in payload.line_items],
+        line_items=[
+            models.LineItem(
+                description=li.description,
+                quantity=_fit(li.quantity, _QTY_MAX),
+                unit_price=_fit(li.unit_price),
+                amount=_fit(li.amount),
+            )
+            for li in payload.line_items
+        ],
     )
     db.add(receipt)
     db.commit()
@@ -198,6 +226,19 @@ def get_receipt(
     return _get_owned_or_404(receipt_id, db, current_user)
 
 
+@router.get("/{receipt_id}/image")
+def get_receipt_image(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Serve the stored receipt image to its owner (or an admin)."""
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    if not receipt.image_path or not os.path.isfile(receipt.image_path):
+        raise HTTPException(404, "No image for this receipt")
+    return FileResponse(receipt.image_path)
+
+
 @router.delete("/{receipt_id}", status_code=204)
 def delete_receipt(
     receipt_id: int,
@@ -205,5 +246,12 @@ def delete_receipt(
     current_user: models.User = Depends(get_current_user),
 ):
     receipt = _get_owned_or_404(receipt_id, db, current_user)
+    image_path = receipt.image_path
     db.delete(receipt)
     db.commit()
+    # Best-effort cleanup of the image file on disk.
+    if image_path and os.path.isfile(image_path):
+        try:
+            os.remove(image_path)
+        except OSError:
+            pass

@@ -5,13 +5,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import receipts, auth, users
+from .routers import receipts, auth, users, categories
+from .seed import seed_default_categories
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup. Requires DATABASE_URL to be reachable.
     init_db()
+    seed_default_categories()  # ensure the starter category list exists
     yield
 
 
@@ -26,6 +28,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(categories.router)
 app.include_router(receipts.router)
 
 

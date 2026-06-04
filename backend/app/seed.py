@@ -19,6 +19,28 @@ from .security import hash_password
 from . import models
 
 
+# Starter categories. The parser auto-assigns the first three, so seeding them
+# keeps auto-categorised receipts aligned with the managed picker. Admins add
+# the rest (and their own) from the Categories page.
+DEFAULT_CATEGORIES = ["grocery", "fuel", "other", "restaurant", "pharmacy", "transport"]
+
+
+def seed_default_categories() -> None:
+    """Insert any missing starter categories. Idempotent — safe on every boot."""
+    db = SessionLocal()
+    try:
+        existing = set(db.scalars(select(models.Category.name)).all())
+        added = 0
+        for name in DEFAULT_CATEGORIES:
+            if name not in existing:
+                db.add(models.Category(name=name))
+                added += 1
+        if added:
+            db.commit()
+    finally:
+        db.close()
+
+
 def seed_superadmin(recreate: bool = False) -> None:
     init_db()  # ensure tables exist
     db = SessionLocal()

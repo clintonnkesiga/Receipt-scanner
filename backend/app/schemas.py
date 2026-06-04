@@ -41,6 +41,20 @@ class AdminPasswordReset(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class CategoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class CategoryUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class CategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+
+
 class LineItemBase(BaseModel):
     description: str | None = None
     quantity: Decimal | None = None

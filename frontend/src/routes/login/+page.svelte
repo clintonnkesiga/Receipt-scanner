@@ -29,7 +29,7 @@
   <div class="w-full max-w-sm">
     <div class="text-center mb-6">
       <div class="text-4xl">🧾</div>
-      <h1 class="text-xl font-semibold mt-2">Receipt Manager</h1>
+      <h1 class="text-xl font-semibold mt-2">Receipt Scanner</h1>
       <p class="text-sm text-slate-500">Sign in to continue</p>
     </div>
 

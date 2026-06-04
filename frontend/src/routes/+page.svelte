@@ -4,17 +4,66 @@
     scanReceipt,
     saveReceipt,
     listReceipts,
+    listCategories,
     deleteReceipt,
     downloadCsv,
+    getReceiptImageUrl,
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
 
-  const CATEGORIES = ["grocery", "fuel", "other"];
+  let categories = $state([]); // managed category names, from the API
+  let filter = $state(""); // active category filter on the history list ("" = all)
 
   let receipts = $state([]);
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
   let busy = $state(false);
   let error = $state("");
+
+  // Options for the review dropdown — include the parsed value even if it's not
+  // (or no longer) in the managed list, so an auto-categorised receipt shows it.
+  const reviewOptions = $derived(
+    scan?.parsed?.category && !categories.includes(scan.parsed.category)
+      ? [scan.parsed.category, ...categories]
+      : categories,
+  );
+
+  // Local preview of the file being reviewed (object URL of the uploaded File).
+  let previewUrl = $state(null);
+  let previewIsPdf = $state(false);
+  // Full-size viewer (modal) for saved receipts.
+  let viewerUrl = $state(null);
+  let viewerIsPdf = $state(false);
+  let viewerLoading = $state(false);
+
+  const isPdfPath = (path) => !!path && path.toLowerCase().endsWith(".pdf");
+
+  function clearPreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+    previewIsPdf = false;
+  }
+
+  async function openImage(receipt) {
+    viewerIsPdf = isPdfPath(receipt.image_path);
+    viewerLoading = true;
+    try {
+      viewerUrl = await getReceiptImageUrl(receipt.id);
+    } catch (err) {
+      error = err.message;
+    } finally {
+      viewerLoading = false;
+    }
+  }
+
+  function closeViewer() {
+    if (viewerUrl) URL.revokeObjectURL(viewerUrl);
+    viewerUrl = null;
+  }
+
+  function discardScan() {
+    scan = null;
+    clearPreview();
+  }
 
   const total = $derived(
     receipts.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
@@ -27,13 +76,25 @@
 
   async function refresh() {
     try {
-      receipts = await listReceipts();
+      receipts = await listReceipts(filter);
     } catch (e) {
       error = e.message;
     }
   }
 
-  onMount(refresh);
+  async function setFilter(value) {
+    filter = value;
+    await refresh();
+  }
+
+  onMount(async () => {
+    try {
+      categories = (await listCategories()).map((c) => c.name);
+    } catch (e) {
+      error = e.message;
+    }
+    await refresh();
+  });
 
   async function onExport() {
     try {
@@ -50,6 +111,9 @@
     error = "";
     try {
       scan = await scanReceipt(file);
+      clearPreview();
+      previewUrl = URL.createObjectURL(file);
+      previewIsPdf = file.type === "application/pdf";
     } catch (err) {
       error = err.message;
     } finally {
@@ -63,7 +127,7 @@
     error = "";
     try {
       await saveReceipt(scan.parsed);
-      scan = null;
+      discardScan();
       await refresh();
     } catch (err) {
       error = err.message;
@@ -112,10 +176,10 @@
   <!-- Upload -->
   <section class="bg-white rounded-xl shadow-sm p-5">
     <label class="block">
-      <span class="text-sm font-medium">Upload a receipt photo</span>
+      <span class="text-sm font-medium">Upload a receipt photo or PDF</span>
       <input
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         onchange={onUpload}
         disabled={busy}
         class="mt-2 block w-full text-sm file:mr-4 file:rounded-lg file:border-0
@@ -132,6 +196,21 @@
   {#if scan}
     <section class="bg-white rounded-xl shadow-sm p-5 space-y-4">
       <h2 class="font-semibold">Review &amp; correct</h2>
+      {#if previewUrl}
+        {#if previewIsPdf}
+          <embed
+            src={previewUrl}
+            type="application/pdf"
+            class="w-full h-96 rounded-lg border border-slate-200"
+          />
+        {:else}
+          <img
+            src={previewUrl}
+            alt="Uploaded receipt"
+            class="max-h-72 rounded-lg border border-slate-200 mx-auto"
+          />
+        {/if}
+      {/if}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label class="text-sm">
           <span class="font-medium">Merchant</span>
@@ -166,9 +245,9 @@
           <span class="font-medium">Category</span>
           <select
             bind:value={scan.parsed.category}
-            class="mt-1 block w-full rounded-lg border border-slate-300 p-2"
+            class="mt-1 block w-full rounded-lg border border-slate-300 p-2 capitalize"
           >
-            {#each CATEGORIES as c}
+            {#each reviewOptions as c}
               <option value={c}>{c}</option>
             {/each}
           </select>
@@ -205,7 +284,7 @@
           Save receipt
         </button>
         <button
-          onclick={() => (scan = null)}
+          onclick={discardScan}
           class="px-4 py-2 rounded-lg border hover:bg-slate-50"
         >
           Discard
@@ -216,16 +295,33 @@
 
   <!-- History -->
   <section class="bg-white rounded-xl shadow-sm p-5">
-    <div class="flex items-center justify-between mb-3">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
       <h2 class="font-semibold">History ({receipts.length})</h2>
-      {#if receipts.length}
-        <span class="text-sm text-slate-500">
-          Total: {total.toLocaleString()}
-        </span>
-      {/if}
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-slate-500 flex items-center gap-2">
+          Category
+          <select
+            value={filter}
+            onchange={(e) => setFilter(e.currentTarget.value)}
+            class="rounded-lg border border-slate-300 p-1.5 text-sm capitalize"
+          >
+            <option value="">All</option>
+            {#each categories as c}
+              <option value={c}>{c}</option>
+            {/each}
+          </select>
+        </label>
+        {#if receipts.length}
+          <span class="text-sm text-slate-500">
+            Total: {total.toLocaleString()}
+          </span>
+        {/if}
+      </div>
     </div>
     {#if receipts.length === 0}
-      <p class="text-sm text-slate-500">No receipts yet — upload one above.</p>
+      <p class="text-sm text-slate-500">
+        {filter ? `No receipts in “${filter}”.` : "No receipts yet — upload one above."}
+      </p>
     {:else}
       <table class="w-full text-sm">
         <thead class="text-left text-slate-500 border-b">
@@ -254,7 +350,15 @@
               <td class="text-right tabular-nums">
                 {r.total != null ? `${r.currency || ""} ${Number(r.total).toLocaleString()}` : "—"}
               </td>
-              <td class="text-right">
+              <td class="text-right space-x-3 whitespace-nowrap">
+                {#if r.image_path}
+                  <button
+                    onclick={() => openImage(r)}
+                    class="text-blue-600 hover:underline text-xs"
+                  >
+                    view
+                  </button>
+                {/if}
                 <button
                   onclick={() => onDelete(r.id)}
                   class="text-red-600 hover:underline text-xs"
@@ -269,3 +373,32 @@
     {/if}
   </section>
 </div>
+
+<svelte:window onkeydown={(e) => e.key === "Escape" && closeViewer()} />
+
+<!-- Full-size image viewer -->
+{#if viewerUrl || viewerLoading}
+  <div
+    role="presentation"
+    class="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+    onclick={closeViewer}
+  >
+    {#if viewerLoading}
+      <div class="text-white text-sm animate-pulse">Loading…</div>
+    {:else if viewerIsPdf}
+      <iframe
+        src={viewerUrl}
+        title="Receipt PDF"
+        class="w-[90vw] h-[90vh] rounded-lg shadow-2xl bg-white"
+        onclick={(e) => e.stopPropagation()}
+      ></iframe>
+    {:else}
+      <img
+        src={viewerUrl}
+        alt="Receipt"
+        class="max-h-[90vh] max-w-full rounded-lg shadow-2xl"
+        onclick={(e) => e.stopPropagation()}
+      />
+    {/if}
+  </div>
+{/if}

@@ -111,6 +111,47 @@ export async function resetUserPassword(id, new_password) {
   }
 }
 
+// --- Categories ---
+export async function listCategories() {
+  const res = await request("/api/categories");
+  if (!res.ok) throw new Error("Could not load categories");
+  return res.json();
+}
+
+export async function createCategory(name) {
+  const res = await request("/api/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not create category");
+  }
+  return res.json();
+}
+
+export async function updateCategory(id, name) {
+  const res = await request(`/api/categories/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not update category");
+  }
+  return res.json();
+}
+
+export async function deleteCategory(id) {
+  const res = await request(`/api/categories/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not delete category");
+  }
+}
+
 // --- Receipts ---
 export async function scanReceipt(file) {
   const form = new FormData();
@@ -130,8 +171,9 @@ export async function saveReceipt(payload) {
   return res.json();
 }
 
-export async function listReceipts() {
-  const res = await request(BASE);
+export async function listReceipts(category) {
+  const qs = category ? `?category=${encodeURIComponent(category)}` : "";
+  const res = await request(`${BASE}${qs}`);
   if (!res.ok) throw new Error("Could not load receipts");
   return res.json();
 }
@@ -140,6 +182,15 @@ export async function getStats() {
   const res = await request(`${BASE}/stats`);
   if (!res.ok) throw new Error("Could not load stats");
   return res.json();
+}
+
+// Fetch a receipt's image (auth-protected) and return an object URL.
+// Caller is responsible for URL.revokeObjectURL when done.
+export async function getReceiptImageUrl(id) {
+  const res = await request(`${BASE}/${id}/image`);
+  if (!res.ok) throw new Error("Could not load image");
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 export async function deleteReceipt(id) {
