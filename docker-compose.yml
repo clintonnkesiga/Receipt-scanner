@@ -28,13 +28,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file: ./backend/.env          # loads SECRET_KEY, SUPERADMIN_*, etc.
     environment:
+      # Override DATABASE_URL so it points at the docker "db" container.
       DATABASE_URL: postgresql+psycopg2://receipts:receipts@db:5432/receipts
       FRONTEND_ORIGIN: http://localhost:5173
       UPLOAD_DIR: uploads
-      # Override in a real deployment — generate with:
-      #   python -c "import secrets; print(secrets.token_hex(32))"
-      SECRET_KEY: CHANGE_ME_dev_only_insecure_secret
     ports:
       - "8000:8000"
     volumes:
