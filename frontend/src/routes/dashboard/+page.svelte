@@ -41,7 +41,7 @@
   });
 </script>
 
-<div class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+<div class="w-full px-6 py-8 space-y-6">
   <h1 class="text-2xl font-semibold">Dashboard</h1>
 
   {#if error}
@@ -132,6 +132,8 @@
         </div>
       </section>
 
+      <!-- Charts: 1-col on mobile, 2-col on large screens -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <!-- By category -->
       <section class="bg-white rounded-xl shadow-sm p-5">
         <h2 class="font-semibold mb-4">Spend by category</h2>
@@ -200,6 +202,7 @@
           </div>
         {/if}
       </section>
+      </div><!-- end charts grid -->
     {/if}
   {/if}
 </div>

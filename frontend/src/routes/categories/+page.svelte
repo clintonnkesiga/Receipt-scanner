@@ -98,7 +98,7 @@
   }
 </script>
 
-<div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
+<div class="w-full px-6 py-8 space-y-6">
   <h1 class="text-2xl font-semibold">Categories</h1>
   <p class="text-sm text-slate-500">
     Group receipts by type — e.g. supermarket, fuel station, restaurant. These
