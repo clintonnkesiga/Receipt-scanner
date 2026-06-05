@@ -14,10 +14,18 @@
   import ReceiptThumb from "$lib/components/ReceiptThumb.svelte";
 
   let categories = $state([]); // managed category names, from the API
-  let filter = $state(""); // active category filter on the history list ("" = all)
   let view = $state("gallery"); // "table" | "gallery"
 
-  let receipts = $state([]);
+  // Filters (all applied client-side over the full loaded list).
+  let filter = $state(""); // category filter ("" = all)
+  let search = $state(""); // free-text match on merchant
+  let sort = $state("date_desc"); // date_desc | date_asc | total_desc | total_asc
+
+  // Pagination.
+  const PAGE_SIZE = 12;
+  let page = $state(1);
+
+  let receipts = $state([]); // full list from the API
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
   let busy = $state(false);
   let error = $state("");
@@ -113,19 +121,49 @@
     clearPreview();
   }
 
-  const total = $derived(
-    receipts.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
-  );
-
   // Admins/super-admins see everyone's receipts, so show whose each one is.
   const isElevated = $derived(
     $currentUser?.role === "admin" || $currentUser?.role === "superadmin",
   );
 
-  // Gallery view groups receipts by category, sorted by name; "uncategorized" last.
+  // --- Filter → sort → paginate (all client-side over the full list) ---
+  const filtered = $derived.by(() => {
+    const q = search.trim().toLowerCase();
+    let list = receipts.filter(
+      (r) =>
+        (!filter || r.category === filter) &&
+        (!q || (r.merchant || "").toLowerCase().includes(q)),
+    );
+    const num = (r) => Number(r.total) || 0;
+    const day = (r) => r.purchase_date || ""; // ISO dates sort lexicographically
+    const cmp = {
+      date_desc: (a, b) => day(b).localeCompare(day(a)),
+      date_asc: (a, b) => day(a).localeCompare(day(b)),
+      total_desc: (a, b) => num(b) - num(a),
+      total_asc: (a, b) => num(a) - num(b),
+    }[sort];
+    return [...list].sort(cmp);
+  });
+
+  const total = $derived(
+    filtered.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
+  );
+
+  const pageCount = $derived(Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
+
+  // Keep the page in range as the result set shrinks (filtering, deletes).
+  $effect(() => {
+    if (page > pageCount) page = pageCount;
+  });
+
+  const paged = $derived(
+    filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+  );
+
+  // Gallery groups the current page by category, sorted by name; "uncategorized" last.
   const grouped = $derived.by(() => {
     const map = new Map();
-    for (const r of receipts) {
+    for (const r of paged) {
       const key = r.category || "uncategorized";
       (map.get(key) ?? map.set(key, []).get(key)).push(r);
     }
@@ -136,23 +174,25 @@
     });
   });
 
-  // The order the viewer steps through: grouped order in gallery, list order
-  // in the table — so prev/next matches what the user sees on screen.
+  // The order the viewer steps through — matches what's shown on the current page.
   const orderedReceipts = $derived(
-    view === "gallery" ? grouped.flatMap(([, items]) => items) : receipts,
+    view === "gallery" ? grouped.flatMap(([, items]) => items) : paged,
   );
+
+  // Inclusive 1-based range of the current page, e.g. "1–12 of 37".
+  const rangeStart = $derived(filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0);
+  const rangeEnd = $derived(Math.min(page * PAGE_SIZE, filtered.length));
 
   async function refresh() {
     try {
-      receipts = await listReceipts(filter);
+      receipts = await listReceipts(); // load all; filtering is client-side
     } catch (e) {
       error = e.message;
     }
   }
 
-  async function setFilter(value) {
-    filter = value;
-    await refresh();
+  function resetPage() {
+    page = 1;
   }
 
   onMount(async () => {
@@ -371,50 +411,72 @@
 
   <!-- History -->
   <section class="bg-white rounded-xl shadow-sm p-5">
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-      <h2 class="font-semibold">History ({receipts.length})</h2>
-      <div class="flex items-center gap-3">
-        <!-- Table / Gallery view toggle -->
-        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          <button
-            type="button"
-            onclick={() => (view = "table")}
-            class="px-3 py-1.5 {view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
-          >
-            Table
-          </button>
-          <button
-            type="button"
-            onclick={() => (view = "gallery")}
-            class="px-3 py-1.5 border-l border-slate-300 {view === 'gallery' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
-          >
-            Gallery
-          </button>
-        </div>
-        <label class="text-sm text-slate-500 flex items-center gap-2">
-          Category
-          <select
-            value={filter}
-            onchange={(e) => setFilter(e.currentTarget.value)}
-            class="rounded-lg border border-slate-300 p-1.5 text-sm capitalize"
-          >
-            <option value="">All</option>
-            {#each categories as c}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
-        </label>
-        {#if receipts.length}
-          <span class="text-sm text-slate-500">
-            Total: {total.toLocaleString()}
-          </span>
-        {/if}
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <h2 class="font-semibold">History ({filtered.length})</h2>
+      <!-- Table / Gallery view toggle -->
+      <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+        <button
+          type="button"
+          onclick={() => (view = "table")}
+          class="px-3 py-1.5 {view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+        >
+          Table
+        </button>
+        <button
+          type="button"
+          onclick={() => (view = "gallery")}
+          class="px-3 py-1.5 border-l border-slate-300 {view === 'gallery' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+        >
+          Gallery
+        </button>
       </div>
     </div>
+
+    <!-- Filter toolbar -->
+    <div class="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+      <input
+        type="search"
+        placeholder="Search merchant…"
+        value={search}
+        oninput={(e) => { search = e.currentTarget.value; resetPage(); }}
+        class="rounded-lg border border-slate-300 p-1.5 text-sm w-48"
+      />
+      <label class="text-sm text-slate-500 flex items-center gap-2">
+        Category
+        <select
+          value={filter}
+          onchange={(e) => { filter = e.currentTarget.value; resetPage(); }}
+          class="rounded-lg border border-slate-300 p-1.5 text-sm capitalize"
+        >
+          <option value="">All</option>
+          {#each categories as c}
+            <option value={c}>{c}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="text-sm text-slate-500 flex items-center gap-2">
+        Sort
+        <select
+          bind:value={sort}
+          class="rounded-lg border border-slate-300 p-1.5 text-sm"
+        >
+          <option value="date_desc">Newest first</option>
+          <option value="date_asc">Oldest first</option>
+          <option value="total_desc">Highest total</option>
+          <option value="total_asc">Lowest total</option>
+        </select>
+      </label>
+      {#if filtered.length}
+        <span class="text-sm text-slate-500 ml-auto">
+          Total: {total.toLocaleString()}
+        </span>
+      {/if}
+    </div>
+
     {#if receipts.length === 0}
-      <p class="text-sm text-slate-500">
-        {filter ? `No receipts in “${filter}”.` : "No receipts yet — upload one above."}
-      </p>
+      <p class="text-sm text-slate-500">No receipts yet — upload one above.</p>
+    {:else if filtered.length === 0}
+      <p class="text-sm text-slate-500">No receipts match your filters.</p>
     {:else if view === "gallery"}
       <div class="space-y-8">
         {#each grouped as [cat, items] (cat)}
@@ -449,7 +511,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each receipts as r (r.id)}
+          {#each paged as r (r.id)}
             <tr class="border-b last:border-0 hover:bg-slate-50">
               <td class="py-2">{r.merchant || "—"}</td>
               {#if isElevated}
@@ -484,6 +546,46 @@
           {/each}
         </tbody>
       </table>
+    {/if}
+
+    <!-- Pagination -->
+    {#if filtered.length > 0}
+      <div class="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
+        <span class="text-sm text-slate-500">
+          Showing {rangeStart}–{rangeEnd} of {filtered.length}
+        </span>
+        {#if pageCount > 1}
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              onclick={() => (page = Math.max(1, page - 1))}
+              disabled={page <= 1}
+              class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+            {#each Array(pageCount) as _, i}
+              <button
+                type="button"
+                onclick={() => (page = i + 1)}
+                class="w-8 h-8 text-sm rounded-lg border {page === i + 1
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'}"
+              >
+                {i + 1}
+              </button>
+            {/each}
+            <button
+              type="button"
+              onclick={() => (page = Math.min(pageCount, page + 1))}
+              disabled={page >= pageCount}
+              class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        {/if}
+      </div>
     {/if}
   </section>
 </div>

@@ -1,7 +1,9 @@
-# Optional: spin up a local PostgreSQL for development.
-#   docker compose up -d
-# Then set in backend/.env:
-#   DATABASE_URL=postgresql+psycopg2://receipts:receipts@localhost:5432/receipts
+# docker compose up -d
+#
+# Services
+#   db       → PostgreSQL   : localhost:5480
+#   backend  → FastAPI/uvicorn : http://localhost:8000
+#   frontend → SvelteKit/Vite  : http://localhost:5173
 services:
   db:
     image: postgres:16
@@ -11,9 +13,48 @@ services:
       POSTGRES_PASSWORD: receipts
       POSTGRES_DB: receipts
     ports:
-      - "5432:5432"
+      - "5480:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U receipts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://receipts:receipts@db:5432/receipts
+      FRONTEND_ORIGIN: http://localhost:5173
+      UPLOAD_DIR: uploads
+      # Override in a real deployment — generate with:
+      #   python -c "import secrets; print(secrets.token_hex(32))"
+      SECRET_KEY: CHANGE_ME_dev_only_insecure_secret
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source for live-reload; uploads persist on the host.
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Points Vite's dev-server proxy at the backend container.
+      API_URL: http://backend:8000
+    ports:
+      - "5179:5173"
+    volumes:
+      - ./frontend:/app
+      # Protect the node_modules installed inside the image.
+      - /app/node_modules
 
 volumes:
   pgdata:
