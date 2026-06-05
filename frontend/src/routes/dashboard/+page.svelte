@@ -69,9 +69,12 @@
     {:else}
       <!-- Summary cards -->
       <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">Total spend</div>
-          <div class="text-2xl font-semibold mt-1">
+        <div class="rounded-xl shadow-sm p-5 bg-blue-50 border border-blue-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-blue-700">Total spend</div>
+            <span class="text-lg">💰</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-blue-900">
             {fmt(stats.total_spend)}
           </div>
           {#if multiCurrency}
@@ -80,13 +83,25 @@
             </div>
           {/if}
         </div>
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">Receipts</div>
-          <div class="text-2xl font-semibold mt-1">{stats.receipt_count}</div>
+        <div
+          class="rounded-xl shadow-sm p-5 bg-emerald-50 border border-emerald-100"
+        >
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-emerald-700">Receipts</div>
+            <span class="text-lg">🧾</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-emerald-900">
+            {stats.receipt_count}
+          </div>
         </div>
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">Avg / receipt</div>
-          <div class="text-2xl font-semibold mt-1">
+        <div
+          class="rounded-xl shadow-sm p-5 bg-violet-50 border border-violet-100"
+        >
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-violet-700">Avg / receipt</div>
+            <span class="text-lg">📊</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-violet-900">
             {fmt(Number(stats.total_spend) / stats.receipt_count)}
           </div>
         </div>
@@ -94,9 +109,14 @@
 
       <!-- Secondary cards: trend + recent activity -->
       <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">This month</div>
-          <div class="text-2xl font-semibold mt-1">{fmt(trend?.current)}</div>
+        <div class="rounded-xl shadow-sm p-5 bg-amber-50 border border-amber-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-amber-700">This month</div>
+            <span class="text-lg">📅</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-amber-900">
+            {fmt(trend?.current)}
+          </div>
           {#if trend && trend.change_pct != null}
             <div
               class="text-xs mt-1 {trend.change_pct > 0
@@ -114,13 +134,23 @@
             </div>
           {/if}
         </div>
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">Added (last 30 days)</div>
-          <div class="text-2xl font-semibold mt-1">{stats.recent_count}</div>
+        <div class="rounded-xl shadow-sm p-5 bg-cyan-50 border border-cyan-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-cyan-700">
+              Added (last 30 days)
+            </div>
+            <span class="text-lg">➕</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-cyan-900">
+            {stats.recent_count}
+          </div>
         </div>
-        <div class="bg-white rounded-xl shadow-sm p-5">
-          <div class="text-sm text-slate-500">Last receipt</div>
-          <div class="text-2xl font-semibold mt-1">
+        <div class="rounded-xl shadow-sm p-5 bg-rose-50 border border-rose-100">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-rose-700">Last receipt</div>
+            <span class="text-lg">🕒</span>
+          </div>
+          <div class="text-2xl font-semibold mt-1 text-rose-900">
             {fmtDate(stats.last_receipt_date)}
           </div>
         </div>
@@ -129,12 +159,16 @@
       <!-- Largest receipt -->
       {#if stats.largest_receipt}
         {@const lr = stats.largest_receipt}
-        <section class="bg-white rounded-xl shadow-sm p-5">
-          <h2 class="font-semibold mb-1">Largest receipt</h2>
+        <section
+          class="rounded-xl shadow-sm p-5 bg-gradient-to-r from-indigo-500 to-violet-500 text-white"
+        >
+          <h2 class="font-semibold mb-1 flex items-center gap-2">
+            <span>🏆</span> Largest receipt
+          </h2>
           <div class="flex items-baseline justify-between flex-wrap gap-2">
-            <div class="text-slate-600">
+            <div class="text-indigo-100">
               {lr.merchant || "Unknown merchant"}
-              <span class="text-slate-400 text-sm"
+              <span class="text-indigo-200 text-sm"
                 >· {fmtDate(lr.purchase_date)}</span
               >
             </div>
