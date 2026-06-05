@@ -7,7 +7,7 @@ import {
 
 // In Docker the backend is reachable at http://backend:8000.
 // Locally it stays at http://localhost:8000.
-const apiUrl = process.env.API_URL ? ? "http://localhost:8000";
+const apiUrl = process.env.API_URL ?? "http://localhost:8000";
 
 export default defineConfig({
   plugins: [sveltekit()],

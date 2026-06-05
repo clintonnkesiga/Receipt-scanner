@@ -1,33 +1,32 @@
 <script>
   import { changePassword } from "$lib/api";
+  import { toasts } from "$lib/toast.js";
   import PasswordInput from "$lib/components/PasswordInput.svelte";
 
   let current = $state("");
   let next = $state("");
   let confirm = $state("");
   let busy = $state(false);
-  let error = $state("");
-  let success = $state("");
 
   async function onSubmit(e) {
     e.preventDefault();
-    error = "";
-    success = "";
     if (next.length < 8) {
-      error = "New password must be at least 8 characters";
+      toasts.error("New password must be at least 8 characters");
       return;
     }
     if (next !== confirm) {
-      error = "New passwords do not match";
+      toasts.error("New passwords do not match");
       return;
     }
     busy = true;
     try {
       await changePassword(current, next);
-      success = "Password updated successfully.";
       current = next = confirm = "";
+      toasts.success("Password updated successfully");
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not update password",
+      );
     } finally {
       busy = false;
     }
@@ -39,17 +38,6 @@
 
   <div class="bg-white rounded-xl shadow-sm p-6">
     <h2 class="font-semibold mb-4">Change password</h2>
-
-    {#if error}
-      <div class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm mb-4">
-        {error}
-      </div>
-    {/if}
-    {#if success}
-      <div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg p-3 text-sm mb-4">
-        {success}
-      </div>
-    {/if}
 
     <form onsubmit={onSubmit} class="space-y-4">
       <label class="block text-sm">

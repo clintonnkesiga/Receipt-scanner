@@ -1,12 +1,13 @@
 import csv
 import io
 import os
-import uuid
+import tempfile
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,7 +16,7 @@ from ..database import get_db
 from ..ocr import run_ocr
 from ..parser import parse_receipt
 from ..security import get_current_user
-from .. import models, schemas
+from .. import models, schemas, storage
 
 # Every receipts endpoint requires a valid JWT.
 router = APIRouter(prefix="/api/receipts", tags=["receipts"])
@@ -62,20 +63,27 @@ async def scan_receipt(
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(415, f"Unsupported file type: {file.content_type}")
 
-    os.makedirs(settings.upload_dir, exist_ok=True)
     ext = os.path.splitext(file.filename or "")[1] or ".jpg"
-    name = f"{uuid.uuid4().hex}{ext}"
-    path = os.path.join(settings.upload_dir, name)
-
     contents = await file.read()
-    with open(path, "wb") as f:
-        f.write(contents)
 
-    raw_text = run_ocr(path)
+    # OCR requires a real filesystem path; use a temp file then clean up.
+    fd, tmp_path = tempfile.mkstemp(suffix=ext)
+    try:
+        os.close(fd)
+        with open(tmp_path, "wb") as f:
+            f.write(contents)
+        raw_text = run_ocr(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    filer_path = await storage.upload(contents, file.filename or f"receipt{ext}", current_user.id)
     parsed = parse_receipt(raw_text)
-    parsed.image_path = path
+    parsed.image_path = filer_path
 
-    return schemas.ScanResult(image_path=path, raw_ocr_text=raw_text, parsed=parsed)
+    return schemas.ScanResult(image_path=filer_path, raw_ocr_text=raw_text, parsed=parsed)
 
 
 @router.post("", response_model=schemas.ReceiptOut, status_code=201)
@@ -281,31 +289,56 @@ def get_receipt(
 
 
 @router.get("/{receipt_id}/image")
-def get_receipt_image(
+async def get_receipt_image(
     receipt_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     """Serve the stored receipt image to its owner (or an admin)."""
     receipt = _get_owned_or_404(receipt_id, db, current_user)
-    if not receipt.image_path or not os.path.isfile(receipt.image_path):
+    if not receipt.image_path:
         raise HTTPException(404, "No image for this receipt")
-    return FileResponse(receipt.image_path)
+    try:
+        data, content_type = await storage.stream(receipt.image_path)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(404, "No image for this receipt")
+        raise HTTPException(502, "Storage error")
+    return Response(content=data, media_type=content_type)
+
+
+@router.patch("/{receipt_id}", response_model=schemas.ReceiptOut)
+def update_receipt(
+    receipt_id: int,
+    payload: schemas.ReceiptUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Partially update a receipt's editable fields."""
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    update_data = payload.model_dump(exclude_unset=True)
+    if "total" in update_data:
+        update_data["total"] = _fit(update_data["total"])
+    for field, value in update_data.items():
+        setattr(receipt, field, value)
+    db.commit()
+    db.refresh(receipt)
+    return receipt
 
 
 @router.delete("/{receipt_id}", status_code=204)
-def delete_receipt(
+async def delete_receipt(
     receipt_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     receipt = _get_owned_or_404(receipt_id, db, current_user)
-    image_path = receipt.image_path
+    filer_path = receipt.image_path
     db.delete(receipt)
     db.commit()
-    # Best-effort cleanup of the image file on disk.
-    if image_path and os.path.isfile(image_path):
+    # Best-effort cleanup of the file in SeaweedFS.
+    if filer_path:
         try:
-            os.remove(image_path)
-        except OSError:
+            await storage.delete(filer_path)
+        except Exception:
             pass

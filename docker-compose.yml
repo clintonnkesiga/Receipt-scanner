@@ -1,9 +1,12 @@
 # docker compose up -d
 #
 # Services
-#   db       → PostgreSQL   : localhost:5480
-#   backend  → FastAPI/uvicorn : http://localhost:8000
-#   frontend → SvelteKit/Vite  : http://localhost:5173
+#   db              → PostgreSQL          : localhost:5480
+#   seaweed-master  → SeaweedFS master    : localhost:9333
+#   seaweed-volume  → SeaweedFS volume    : localhost:8080
+#   seaweed-filer   → SeaweedFS filer     : localhost:8888
+#   backend         → FastAPI/uvicorn     : http://localhost:8000
+#   frontend        → SvelteKit/Vite      : http://localhost:5173
 services:
   db:
     image: postgres:16
@@ -22,18 +25,51 @@ services:
       timeout: 5s
       retries: 10
 
+  seaweed-master:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: "master -ip=seaweed-master -ip.bind=0.0.0.0"
+    ports:
+      - "9333:9333"
+
+  seaweed-volume:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: 'volume -mserver="seaweed-master:9333" -ip.bind=0.0.0.0 -port=8080 -dir=/data'
+    ports:
+      - "8080:8080"
+    volumes:
+      - seaweedfs_volume:/data
+    depends_on:
+      - seaweed-master
+
+  seaweed-filer:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: 'filer -master="seaweed-master:9333" -ip.bind=0.0.0.0 -port=8888'
+    ports:
+      - "8888:8888"
+    environment:
+      WEED_LEVELDB2_ENABLED: "true"
+    depends_on:
+      - seaweed-master
+      - seaweed-volume
+
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      seaweed-filer:
+        condition: service_started
     env_file: ./backend/.env          # loads SECRET_KEY, SUPERADMIN_*, etc.
     environment:
       # Override DATABASE_URL so it points at the docker "db" container.
       DATABASE_URL: postgresql+psycopg2://receipts:receipts@db:5432/receipts
       FRONTEND_ORIGIN: http://localhost:5173
       UPLOAD_DIR: uploads
+      SEAWEEDFS_FILER_URL: http://seaweed-filer:8888
     ports:
       - "8000:8000"
     volumes:
@@ -57,3 +93,4 @@ services:
 
 volumes:
   pgdata:
+  seaweedfs_volume:

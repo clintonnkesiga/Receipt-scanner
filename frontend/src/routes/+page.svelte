@@ -6,10 +6,12 @@
     listReceipts,
     listCategories,
     deleteReceipt,
+    updateReceipt,
     downloadCsv,
     getReceiptImageUrl,
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
+  import { toasts } from "$lib/toast.js";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import ReceiptThumb from "$lib/components/ReceiptThumb.svelte";
 
@@ -28,7 +30,6 @@
   let receipts = $state([]); // full list from the API
   let scan = $state(null); // { image_path, raw_ocr_text, parsed }
   let busy = $state(false);
-  let error = $state("");
 
   // Options for the review dropdown — include the parsed value even if it's not
   // (or no longer) in the managed list, so an auto-categorised receipt shows it.
@@ -77,7 +78,10 @@
       }
       viewerUrl = url;
     } catch (err) {
-      if (token === viewerToken) error = err.message;
+      if (token === viewerToken)
+        toasts.error(
+          err instanceof Error ? err.message : "Could not load image",
+        );
     } finally {
       if (token === viewerToken) viewerLoading = false;
     }
@@ -149,7 +153,9 @@
     filtered.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
   );
 
-  const pageCount = $derived(Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
+  const pageCount = $derived(
+    Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)),
+  );
 
   // Keep the page in range as the result set shrinks (filtering, deletes).
   $effect(() => {
@@ -159,6 +165,26 @@
   const paged = $derived(
     filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
   );
+
+  // Windowed page list: numbers + null (= ellipsis gap) for the pagination bar.
+  // Always shows page 1, last page, current ±1, with "…" for any gaps.
+  const pageWindowed = $derived.by(() => {
+    if (pageCount <= 7)
+      return Array.from({ length: pageCount }, (_, i) => i + 1);
+    const keep = new Set(
+      [1, pageCount, page - 1, page, page + 1].filter(
+        (p) => p >= 1 && p <= pageCount,
+      ),
+    );
+    const sorted = [...keep].sort((a, b) => a - b);
+    /** @type {(number|null)[]} */
+    const result = [];
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push(null); // ellipsis
+      result.push(sorted[i]);
+    }
+    return result;
+  });
 
   // Gallery groups the current page by category, sorted by name; "uncategorized" last.
   const grouped = $derived.by(() => {
@@ -185,9 +211,9 @@
 
   async function refresh() {
     try {
-      receipts = await listReceipts(); // load all; filtering is client-side
+      receipts = await listReceipts();
     } catch (e) {
-      error = e.message;
+      toasts.error(e instanceof Error ? e.message : "Could not load receipts");
     }
   }
 
@@ -199,7 +225,9 @@
     try {
       categories = (await listCategories()).map((c) => c.name);
     } catch (e) {
-      error = e.message;
+      toasts.error(
+        e instanceof Error ? e.message : "Could not load categories",
+      );
     }
     await refresh();
   });
@@ -207,38 +235,52 @@
   async function onExport() {
     try {
       await downloadCsv();
+      toasts.success("Receipts exported to CSV");
     } catch (err) {
-      error = err.message;
+      toasts.error(err instanceof Error ? err.message : "Export failed");
     }
   }
+
+  // Upload progress: "uploading" tracks real bytes; "processing" is the
+  // indeterminate OCR phase (no server-side progress events).
+  let uploadPhase = $state("idle"); // "idle" | "uploading" | "processing"
+  let uploadPct = $state(0);
 
   async function onUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     busy = true;
-    error = "";
+    uploadPhase = "uploading";
+    uploadPct = 0;
     try {
-      scan = await scanReceipt(file);
+      scan = await scanReceipt(file, (frac) => {
+        uploadPct = Math.round(frac * 100);
+        if (frac >= 1) uploadPhase = "processing";
+      });
       clearPreview();
       previewUrl = URL.createObjectURL(file);
       previewIsPdf = file.type === "application/pdf";
     } catch (err) {
-      error = err.message;
+      toasts.error(err instanceof Error ? err.message : "Scan failed");
     } finally {
       busy = false;
+      uploadPhase = "idle";
+      uploadPct = 0;
       e.target.value = "";
     }
   }
 
   async function onSave() {
     busy = true;
-    error = "";
     try {
       await saveReceipt(scan.parsed);
       discardScan();
       await refresh();
+      toasts.success("Receipt saved");
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not save receipt",
+      );
     } finally {
       busy = false;
     }
@@ -255,10 +297,71 @@
       await deleteReceipt(pendingDelete.id);
       pendingDelete = null;
       await refresh();
+      toasts.success("Receipt deleted");
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not delete receipt",
+      );
     } finally {
       deleting = false;
+    }
+  }
+
+  // --- Edit modal ---
+  let editReceipt = $state(null); // the receipt being edited (null = closed)
+  /** @type {{ merchant: string, purchase_date: string, total: string, currency: string, category: string }} */
+  let editDraft = $state({
+    merchant: "",
+    purchase_date: "",
+    total: "",
+    currency: "",
+    category: "",
+  });
+  let editSaving = $state(false);
+
+  function openEdit(r) {
+    editReceipt = r;
+    editDraft = {
+      merchant: r.merchant ?? "",
+      purchase_date: r.purchase_date ?? "",
+      total: r.total != null ? String(r.total) : "",
+      currency: r.currency ?? "",
+      category: r.category ?? "",
+    };
+  }
+
+  function closeEdit() {
+    editReceipt = null;
+    editDraft = {
+      merchant: "",
+      purchase_date: "",
+      total: "",
+      currency: "",
+      category: "",
+    };
+  }
+
+  async function onEditSave() {
+    if (!editReceipt) return;
+    editSaving = true;
+    try {
+      const patch = {
+        merchant: editDraft.merchant || null,
+        purchase_date: editDraft.purchase_date || null,
+        total: editDraft.total !== "" ? Number(editDraft.total) : null,
+        currency: editDraft.currency || null,
+        category: editDraft.category || null,
+      };
+      await updateReceipt(editReceipt.id, patch);
+      closeEdit();
+      await refresh();
+      toasts.success("Receipt updated");
+    } catch (err) {
+      toasts.error(
+        err instanceof Error ? err.message : "Could not update receipt",
+      );
+    } finally {
+      editSaving = false;
     }
   }
 
@@ -283,12 +386,6 @@
     </button>
   </div>
 
-  {#if error}
-    <div class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm">
-      {error}
-    </div>
-  {/if}
-
   <!-- Upload -->
   <section class="bg-white rounded-xl shadow-sm p-5">
     <label class="block">
@@ -304,7 +401,28 @@
       />
     </label>
     {#if busy && !scan}
-      <p class="mt-3 text-sm text-slate-500 animate-pulse">Scanning…</p>
+      <div class="mt-4">
+        <div class="flex justify-between text-xs text-slate-500 mb-1.5">
+          <span>
+            {uploadPhase === "processing"
+              ? "Reading receipt…"
+              : "Uploading…"}
+          </span>
+          {#if uploadPhase === "uploading"}
+            <span class="tabular-nums">{uploadPct}%</span>
+          {/if}
+        </div>
+        <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+          {#if uploadPhase === "processing"}
+            <div class="h-full w-2/5 rounded-full bg-blue-500 indeterminate"></div>
+          {:else}
+            <div
+              class="h-full rounded-full bg-blue-500 transition-[width] duration-200"
+              style="width: {uploadPct}%"
+            ></div>
+          {/if}
+        </div>
+      </div>
     {/if}
   </section>
 
@@ -388,7 +506,8 @@
 
       <details class="text-sm">
         <summary class="cursor-pointer text-slate-500">Raw OCR text</summary>
-        <pre class="mt-2 whitespace-pre-wrap bg-slate-50 p-3 rounded-lg text-xs">{scan.raw_ocr_text}</pre>
+        <pre
+          class="mt-2 whitespace-pre-wrap bg-slate-50 p-3 rounded-lg text-xs">{scan.raw_ocr_text}</pre>
       </details>
 
       <div class="flex gap-3">
@@ -414,18 +533,24 @@
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <h2 class="font-semibold">History ({filtered.length})</h2>
       <!-- Table / Gallery view toggle -->
-      <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+      <div
+        class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm"
+      >
         <button
           type="button"
           onclick={() => (view = "table")}
-          class="px-3 py-1.5 {view === 'table' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+          class="px-3 py-1.5 {view === 'table'
+            ? 'bg-blue-600 text-white'
+            : 'text-slate-600 hover:bg-slate-50'}"
         >
           Table
         </button>
         <button
           type="button"
           onclick={() => (view = "gallery")}
-          class="px-3 py-1.5 border-l border-slate-300 {view === 'gallery' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'}"
+          class="px-3 py-1.5 border-l border-slate-300 {view === 'gallery'
+            ? 'bg-blue-600 text-white'
+            : 'text-slate-600 hover:bg-slate-50'}"
         >
           Gallery
         </button>
@@ -433,19 +558,27 @@
     </div>
 
     <!-- Filter toolbar -->
-    <div class="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+    <div
+      class="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b border-slate-100"
+    >
       <input
         type="search"
         placeholder="Search merchant…"
         value={search}
-        oninput={(e) => { search = e.currentTarget.value; resetPage(); }}
+        oninput={(e) => {
+          search = e.currentTarget.value;
+          resetPage();
+        }}
         class="rounded-lg border border-slate-300 p-1.5 text-sm w-48"
       />
       <label class="text-sm text-slate-500 flex items-center gap-2">
         Category
         <select
           value={filter}
-          onchange={(e) => { filter = e.currentTarget.value; resetPage(); }}
+          onchange={(e) => {
+            filter = e.currentTarget.value;
+            resetPage();
+          }}
           class="rounded-lg border border-slate-300 p-1.5 text-sm capitalize"
         >
           <option value="">All</option>
@@ -457,7 +590,11 @@
       <label class="text-sm text-slate-500 flex items-center gap-2">
         Sort
         <select
-          bind:value={sort}
+          value={sort}
+          onchange={(e) => {
+            sort = e.currentTarget.value;
+            resetPage();
+          }}
           class="rounded-lg border border-slate-300 p-1.5 text-sm"
         >
           <option value="date_desc">Newest first</option>
@@ -482,14 +619,21 @@
         {#each grouped as [cat, items] (cat)}
           <div>
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-xs rounded-full px-2 py-0.5 capitalize {badgeClass(cat)}">{cat}</span>
+              <span
+                class="text-xs rounded-full px-2 py-0.5 capitalize {badgeClass(
+                  cat,
+                )}">{cat}</span
+              >
               <span class="text-xs text-slate-400">{items.length}</span>
             </div>
-            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+            <div
+              class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3"
+            >
               {#each items as r (r.id)}
                 <ReceiptThumb
                   receipt={r}
                   onopen={openImage}
+                  onedit={openEdit}
                   ondelete={(r) => (pendingDelete = r)}
                   showOwner={isElevated}
                 />
@@ -519,12 +663,18 @@
               {/if}
               <td>{r.purchase_date || "—"}</td>
               <td>
-                <span class="text-xs rounded-full px-2 py-0.5 {badgeClass(r.category)}">
+                <span
+                  class="text-xs rounded-full px-2 py-0.5 {badgeClass(
+                    r.category,
+                  )}"
+                >
                   {r.category}
                 </span>
               </td>
               <td class="text-right tabular-nums">
-                {r.total != null ? `${r.currency || ""} ${Number(r.total).toLocaleString()}` : "—"}
+                {r.total != null
+                  ? `${r.currency || ""} ${Number(r.total).toLocaleString()}`
+                  : "—"}
               </td>
               <td class="text-right space-x-3 whitespace-nowrap">
                 {#if r.image_path}
@@ -535,6 +685,12 @@
                     view
                   </button>
                 {/if}
+                <button
+                  onclick={() => openEdit(r)}
+                  class="text-slate-600 hover:underline text-xs"
+                >
+                  edit
+                </button>
                 <button
                   onclick={() => (pendingDelete = r)}
                   class="text-red-600 hover:underline text-xs"
@@ -550,7 +706,9 @@
 
     <!-- Pagination -->
     {#if filtered.length > 0}
-      <div class="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
+      <div
+        class="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100"
+      >
         <span class="text-sm text-slate-500">
           Showing {rangeStart}–{rangeEnd} of {filtered.length}
         </span>
@@ -564,16 +722,20 @@
             >
               Prev
             </button>
-            {#each Array(pageCount) as _, i}
-              <button
-                type="button"
-                onclick={() => (page = i + 1)}
-                class="w-8 h-8 text-sm rounded-lg border {page === i + 1
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'}"
-              >
-                {i + 1}
-              </button>
+            {#each pageWindowed as p}
+              {#if p === null}
+                <span class="px-1.5 text-slate-400 select-none">…</span>
+              {:else}
+                <button
+                  type="button"
+                  onclick={() => (page = p)}
+                  class="w-8 h-8 text-sm rounded-lg border {page === p
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'}"
+                >
+                  {p}
+                </button>
+              {/if}
             {/each}
             <button
               type="button"
@@ -601,8 +763,12 @@
   >
     <!-- Caption: position + merchant -->
     {#if viewerReceipt}
-      <div class="absolute top-4 left-1/2 -translate-x-1/2 text-white/90 text-sm flex items-center gap-2">
-        <span class="tabular-nums">{viewerIndex + 1} / {orderedReceipts.length}</span>
+      <div
+        class="absolute top-4 left-1/2 -translate-x-1/2 text-white/90 text-sm flex items-center gap-2"
+      >
+        <span class="tabular-nums"
+          >{viewerIndex + 1} / {orderedReceipts.length}</span
+        >
         {#if viewerReceipt.merchant}
           <span class="text-white/50">·</span>
           <span class="truncate max-w-[40vw]">{viewerReceipt.merchant}</span>
@@ -615,7 +781,10 @@
       <button
         type="button"
         aria-label="Previous receipt"
-        onclick={(e) => { e.stopPropagation(); prevReceipt(); }}
+        onclick={(e) => {
+          e.stopPropagation();
+          prevReceipt();
+        }}
         class="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full
                bg-white/10 hover:bg-white/25 text-white text-3xl leading-none flex items-center justify-center transition"
       >
@@ -646,13 +815,117 @@
       <button
         type="button"
         aria-label="Next receipt"
-        onclick={(e) => { e.stopPropagation(); nextReceipt(); }}
+        onclick={(e) => {
+          e.stopPropagation();
+          nextReceipt();
+        }}
         class="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full
                bg-white/10 hover:bg-white/25 text-white text-3xl leading-none flex items-center justify-center transition"
       >
         ›
       </button>
     {/if}
+  </div>
+{/if}
+
+<!-- Edit receipt modal -->
+{#if editReceipt}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-label="Edit receipt"
+    tabindex="-1"
+    class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+    onkeydown={(e) => e.key === "Escape" && closeEdit()}
+  >
+    <div
+      role="presentation"
+      class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-lg">Edit receipt</h2>
+        <button
+          type="button"
+          aria-label="Close"
+          onclick={closeEdit}
+          class="text-slate-400 hover:text-slate-700 text-xl leading-none"
+          >&times;</button
+        >
+      </div>
+
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-sm">
+          <span class="font-medium block mb-1">Merchant</span>
+          <input
+            bind:value={editDraft.merchant}
+            class="w-full rounded-lg border border-slate-300 p-2"
+            placeholder="e.g. Walmart"
+          />
+        </label>
+        <label class="text-sm">
+          <span class="font-medium block mb-1">Date</span>
+          <input
+            type="date"
+            bind:value={editDraft.purchase_date}
+            class="w-full rounded-lg border border-slate-300 p-2"
+          />
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="text-sm">
+            <span class="font-medium block mb-1">Total</span>
+            <input
+              type="number"
+              step="0.01"
+              bind:value={editDraft.total}
+              class="w-full rounded-lg border border-slate-300 p-2"
+              placeholder="0.00"
+            />
+          </label>
+          <label class="text-sm">
+            <span class="font-medium block mb-1">Currency</span>
+            <input
+              bind:value={editDraft.currency}
+              class="w-full rounded-lg border border-slate-300 p-2"
+              placeholder="e.g. USD"
+              maxlength="8"
+            />
+          </label>
+        </div>
+        <label class="text-sm">
+          <span class="font-medium block mb-1">Category</span>
+          <select
+            bind:value={editDraft.category}
+            class="w-full rounded-lg border border-slate-300 p-2 capitalize"
+          >
+            <option value="">— uncategorized —</option>
+            {#each categories as c}
+              <option value={c}>{c}</option>
+            {/each}
+          </select>
+        </label>
+      </div>
+
+      <div class="flex gap-3 pt-1">
+        <button
+          type="button"
+          onclick={onEditSave}
+          disabled={editSaving}
+          class="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium
+                 hover:bg-blue-700 disabled:opacity-50"
+        >
+          {editSaving ? "Saving…" : "Save changes"}
+        </button>
+        <button
+          type="button"
+          onclick={closeEdit}
+          class="px-4 py-2 rounded-lg border text-sm hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -669,3 +942,18 @@
   onconfirm={confirmDelete}
   oncancel={() => (pendingDelete = null)}
 />
+
+<style>
+  /* Indeterminate progress: slide the bar across while OCR runs server-side. */
+  .indeterminate {
+    animation: indeterminate 1.1s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0% {
+      margin-left: -40%;
+    }
+    100% {
+      margin-left: 100%;
+    }
+  }
+</style>
