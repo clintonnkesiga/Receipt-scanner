@@ -15,14 +15,23 @@
     Math.max(1, ...(stats?.by_month ?? []).map((m) => Number(m.total) || 0)),
   );
   const maxMerchant = $derived(
-    Math.max(1, ...(stats?.top_merchants ?? []).map((m) => Number(m.total) || 0)),
+    Math.max(
+      1,
+      ...(stats?.top_merchants ?? []).map((m) => Number(m.total) || 0),
+    ),
   );
   const multiCurrency = $derived((stats?.by_currency ?? []).length > 1);
 
   const trend = $derived(stats?.month_trend ?? null);
 
   const fmtDate = (s) =>
-    s ? new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
+    s
+      ? new Date(s).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "—";
 
   function catColor(category) {
     return category === "fuel"
@@ -45,7 +54,9 @@
   <h1 class="text-2xl font-semibold">Dashboard</h1>
 
   {#if error}
-    <div class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm">
+    <div
+      class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm"
+    >
       {error}
     </div>
   {/if}
@@ -60,9 +71,13 @@
       <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="bg-white rounded-xl shadow-sm p-5">
           <div class="text-sm text-slate-500">Total spend</div>
-          <div class="text-2xl font-semibold mt-1">{fmt(stats.total_spend)}</div>
+          <div class="text-2xl font-semibold mt-1">
+            {fmt(stats.total_spend)}
+          </div>
           {#if multiCurrency}
-            <div class="text-xs text-amber-600 mt-1">mixed currencies — see breakdown</div>
+            <div class="text-xs text-amber-600 mt-1">
+              mixed currencies — see breakdown
+            </div>
           {/if}
         </div>
         <div class="bg-white rounded-xl shadow-sm p-5">
@@ -84,13 +99,19 @@
           <div class="text-2xl font-semibold mt-1">{fmt(trend?.current)}</div>
           {#if trend && trend.change_pct != null}
             <div
-              class="text-xs mt-1 {trend.change_pct > 0 ? 'text-red-600' : trend.change_pct < 0 ? 'text-emerald-600' : 'text-slate-400'}"
+              class="text-xs mt-1 {trend.change_pct > 0
+                ? 'text-red-600'
+                : trend.change_pct < 0
+                  ? 'text-emerald-600'
+                  : 'text-slate-400'}"
             >
               {trend.change_pct > 0 ? "▲" : trend.change_pct < 0 ? "▼" : ""}
               {Math.abs(trend.change_pct).toFixed(0)}% vs last month
             </div>
           {:else}
-            <div class="text-xs text-slate-400 mt-1">no prior month to compare</div>
+            <div class="text-xs text-slate-400 mt-1">
+              no prior month to compare
+            </div>
           {/if}
         </div>
         <div class="bg-white rounded-xl shadow-sm p-5">
@@ -99,7 +120,9 @@
         </div>
         <div class="bg-white rounded-xl shadow-sm p-5">
           <div class="text-sm text-slate-500">Last receipt</div>
-          <div class="text-2xl font-semibold mt-1">{fmtDate(stats.last_receipt_date)}</div>
+          <div class="text-2xl font-semibold mt-1">
+            {fmtDate(stats.last_receipt_date)}
+          </div>
         </div>
       </section>
 
@@ -111,9 +134,14 @@
           <div class="flex items-baseline justify-between flex-wrap gap-2">
             <div class="text-slate-600">
               {lr.merchant || "Unknown merchant"}
-              <span class="text-slate-400 text-sm">· {fmtDate(lr.purchase_date)}</span>
+              <span class="text-slate-400 text-sm"
+                >· {fmtDate(lr.purchase_date)}</span
+              >
             </div>
-            <div class="text-xl font-semibold">{lr.currency || ""} {fmt(lr.total)}</div>
+            <div class="text-xl font-semibold">
+              {lr.currency || ""}
+              {fmt(lr.total)}
+            </div>
           </div>
         </section>
       {/if}
@@ -134,75 +162,89 @@
 
       <!-- Charts: 1-col on mobile, 2-col on large screens -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <!-- By category -->
-      <section class="bg-white rounded-xl shadow-sm p-5">
-        <h2 class="font-semibold mb-4">Spend by category</h2>
-        <div class="space-y-3">
-          {#each stats.by_category as c}
-            <div>
-              <div class="flex justify-between text-sm mb-1">
-                <span class="capitalize">{c.category || "uncategorized"}</span>
-                <span class="text-slate-600">{fmt(c.total)} <span class="text-xs text-slate-400">({c.count})</span></span>
-              </div>
-              <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                  class="h-full rounded-full {catColor(c.category)}"
-                  style="width: {(Number(c.total) / maxCategory) * 100}%"
-                ></div>
-              </div>
-            </div>
-          {/each}
-        </div>
-      </section>
-
-      <!-- Top merchants -->
-      {#if stats.top_merchants.length > 0}
+        <!-- By category -->
         <section class="bg-white rounded-xl shadow-sm p-5">
-          <h2 class="font-semibold mb-4">Top merchants</h2>
+          <h2 class="font-semibold mb-4">Spend by category</h2>
           <div class="space-y-3">
-            {#each stats.top_merchants as m}
+            {#each stats.by_category as c}
               <div>
                 <div class="flex justify-between text-sm mb-1">
-                  <span class="truncate pr-2">{m.merchant || "—"}</span>
-                  <span class="text-slate-600 whitespace-nowrap">{fmt(m.total)} <span class="text-xs text-slate-400">({m.count})</span></span>
+                  <span class="capitalize">{c.category || "uncategorized"}</span
+                  >
+                  <span class="text-slate-600"
+                    >{fmt(c.total)}
+                    <span class="text-xs text-slate-400">({c.count})</span
+                    ></span
+                  >
                 </div>
                 <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
                   <div
-                    class="h-full rounded-full bg-violet-400"
-                    style="width: {(Number(m.total) / maxMerchant) * 100}%"
+                    class="h-full rounded-full {catColor(c.category)}"
+                    style="width: {(Number(c.total) / maxCategory) * 100}%"
                   ></div>
                 </div>
               </div>
             {/each}
           </div>
         </section>
-      {/if}
 
-      <!-- By month -->
-      <section class="bg-white rounded-xl shadow-sm p-5">
-        <h2 class="font-semibold mb-4">Spend by month</h2>
-        {#if stats.by_month.length === 0}
-          <p class="text-sm text-slate-500">No dated receipts yet.</p>
-        {:else}
-          <div class="space-y-3">
-            {#each stats.by_month as m}
-              <div>
-                <div class="flex justify-between text-sm mb-1">
-                  <span>{m.month}</span>
-                  <span class="text-slate-600">{fmt(m.total)} <span class="text-xs text-slate-400">({m.count})</span></span>
+        <!-- Top merchants -->
+        {#if stats.top_merchants.length > 0}
+          <section class="bg-white rounded-xl shadow-sm p-5">
+            <h2 class="font-semibold mb-4">Top merchants</h2>
+            <div class="space-y-3">
+              {#each stats.top_merchants as m}
+                <div>
+                  <div class="flex justify-between text-sm mb-1">
+                    <span class="truncate pr-2">{m.merchant || "—"}</span>
+                    <span class="text-slate-600 whitespace-nowrap"
+                      >{fmt(m.total)}
+                      <span class="text-xs text-slate-400">({m.count})</span
+                      ></span
+                    >
+                  </div>
+                  <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      class="h-full rounded-full bg-violet-400"
+                      style="width: {(Number(m.total) / maxMerchant) * 100}%"
+                    ></div>
+                  </div>
                 </div>
-                <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
-                  <div
-                    class="h-full rounded-full bg-blue-400"
-                    style="width: {(Number(m.total) / maxMonth) * 100}%"
-                  ></div>
-                </div>
-              </div>
-            {/each}
-          </div>
+              {/each}
+            </div>
+          </section>
         {/if}
-      </section>
-      </div><!-- end charts grid -->
+
+        <!-- By month -->
+        <section class="bg-white rounded-xl shadow-sm p-5">
+          <h2 class="font-semibold mb-4">Spend by month</h2>
+          {#if stats.by_month.length === 0}
+            <p class="text-sm text-slate-500">No dated receipts yet.</p>
+          {:else}
+            <div class="space-y-3">
+              {#each stats.by_month as m}
+                <div>
+                  <div class="flex justify-between text-sm mb-1">
+                    <span>{m.month}</span>
+                    <span class="text-slate-600"
+                      >{fmt(m.total)}
+                      <span class="text-xs text-slate-400">({m.count})</span
+                      ></span
+                    >
+                  </div>
+                  <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      class="h-full rounded-full bg-blue-400"
+                      style="width: {(Number(m.total) / maxMonth) * 100}%"
+                    ></div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      </div>
+      <!-- end charts grid -->
     {/if}
   {/if}
 </div>
