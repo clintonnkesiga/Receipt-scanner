@@ -241,12 +241,22 @@
     }
   }
 
+  // Upload progress: "uploading" tracks real bytes; "processing" is the
+  // indeterminate OCR phase (no server-side progress events).
+  let uploadPhase = $state("idle"); // "idle" | "uploading" | "processing"
+  let uploadPct = $state(0);
+
   async function onUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     busy = true;
+    uploadPhase = "uploading";
+    uploadPct = 0;
     try {
-      scan = await scanReceipt(file);
+      scan = await scanReceipt(file, (frac) => {
+        uploadPct = Math.round(frac * 100);
+        if (frac >= 1) uploadPhase = "processing";
+      });
       clearPreview();
       previewUrl = URL.createObjectURL(file);
       previewIsPdf = file.type === "application/pdf";
@@ -254,6 +264,8 @@
       toasts.error(err instanceof Error ? err.message : "Scan failed");
     } finally {
       busy = false;
+      uploadPhase = "idle";
+      uploadPct = 0;
       e.target.value = "";
     }
   }
@@ -389,7 +401,28 @@
       />
     </label>
     {#if busy && !scan}
-      <p class="mt-3 text-sm text-slate-500 animate-pulse">Scanning…</p>
+      <div class="mt-4">
+        <div class="flex justify-between text-xs text-slate-500 mb-1.5">
+          <span>
+            {uploadPhase === "processing"
+              ? "Reading receipt…"
+              : "Uploading…"}
+          </span>
+          {#if uploadPhase === "uploading"}
+            <span class="tabular-nums">{uploadPct}%</span>
+          {/if}
+        </div>
+        <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+          {#if uploadPhase === "processing"}
+            <div class="h-full w-2/5 rounded-full bg-blue-500 indeterminate"></div>
+          {:else}
+            <div
+              class="h-full rounded-full bg-blue-500 transition-[width] duration-200"
+              style="width: {uploadPct}%"
+            ></div>
+          {/if}
+        </div>
+      </div>
     {/if}
   </section>
 
@@ -909,3 +942,18 @@
   onconfirm={confirmDelete}
   oncancel={() => (pendingDelete = null)}
 />
+
+<style>
+  /* Indeterminate progress: slide the bar across while OCR runs server-side. */
+  .indeterminate {
+    animation: indeterminate 1.1s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0% {
+      margin-left: -40%;
+    }
+    100% {
+      margin-left: 100%;
+    }
+  }
+</style>

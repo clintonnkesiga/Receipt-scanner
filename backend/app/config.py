@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Optional explicit path to the tesseract binary.
     tesseract_cmd: str | None = None
 
+    # SeaweedFS filer base URL (no trailing slash).
+    seaweedfs_filer_url: str = "http://localhost:8888"
+
     # --- Auth ---
     # Secret used to sign JWTs. MUST be overridden in .env for any real use.
     secret_key: str = "CHANGE_ME_dev_only_insecure_secret"

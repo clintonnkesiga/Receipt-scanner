@@ -17,13 +17,13 @@
 <div
   aria-live="polite"
   aria-atomic="false"
-  class="fixed bottom-5 right-5 z-[200] flex flex-col-reverse gap-2 items-end pointer-events-none"
+  class="fixed top-5 right-5 z-[200] flex flex-col gap-2 items-end pointer-events-none"
 >
   {#each $toasts as toast (toast.id)}
     <div
       role="status"
       animate:flip={{ duration: 200 }}
-      in:fly={{ x: 60, duration: 250, opacity: 0 }}
+      in:fly={{ y: -16, duration: 250, opacity: 0 }}
       out:fade={{ duration: 200 }}
       class="pointer-events-auto flex items-start gap-3 rounded-xl shadow-lg
              px-4 py-3 text-sm max-w-sm w-max {colors[toast.type] ??

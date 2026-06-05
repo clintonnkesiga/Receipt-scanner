@@ -9,6 +9,7 @@
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
   import { toasts } from "$lib/toast.js";
+  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
 
   let categories = $state([]);
 
@@ -90,21 +91,25 @@
     }
   }
 
-  async function onDelete(c) {
-    if (
-      !confirm(
-        `Delete category "${c.name}"? Existing receipts keep their label.`,
-      )
-    )
-      return;
+  // Category pending deletion (drives the confirm dialog); null = closed.
+  let pendingDelete = $state(null);
+  let deleting = $state(false);
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const c = pendingDelete;
+    deleting = true;
     try {
       await deleteCategory(c.id);
+      pendingDelete = null;
       await refresh();
       toasts.success(`Category "${c.name}" deleted`);
     } catch (err) {
       toasts.error(
         err instanceof Error ? err.message : "Could not delete category",
       );
+    } finally {
+      deleting = false;
     }
   }
 </script>
@@ -152,12 +157,14 @@
                 class="flex-1 rounded-lg border border-slate-300 p-2"
               />
               <button
+                type="button"
                 onclick={() => saveEdit(c)}
                 class="text-blue-600 hover:underline text-xs"
               >
                 save
               </button>
               <button
+                type="button"
                 onclick={cancelEdit}
                 class="text-slate-500 hover:underline text-xs"
               >
@@ -172,7 +179,7 @@
                 edit
               </button>
               <button
-                onclick={() => onDelete(c)}
+                onclick={() => (pendingDelete = c)}
                 class="text-red-600 hover:underline text-xs"
               >
                 delete
@@ -184,3 +191,15 @@
     {/if}
   </section>
 </div>
+
+<!-- Delete confirmation -->
+<ConfirmDialog
+  open={pendingDelete != null}
+  danger
+  busy={deleting}
+  title={pendingDelete ? `Delete “${pendingDelete.name}”?` : ""}
+  message="Existing receipts keep their label — only the category option is removed."
+  confirmLabel={deleting ? "Deleting…" : "Delete"}
+  onconfirm={confirmDelete}
+  oncancel={() => (pendingDelete = null)}
+/>

@@ -194,15 +194,49 @@ export async function deleteCategory(id) {
 }
 
 // --- Receipts ---
-export async function scanReceipt(file) {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await request(`${BASE}/scan`, {
-    method: "POST",
-    body: form
+// Uses XHR (not fetch) so we can report upload progress. `onProgress` receives
+// a fraction 0..1 while the file uploads; once it hits 1 the server is doing
+// OCR, for which there's no progress event (caller shows an indeterminate bar).
+export function scanReceipt(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}/scan`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        logout();
+        goto("/login");
+        reject(new Error("Session expired — please log in again"));
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Scan failed"));
+        }
+        return;
+      }
+      let detail = "Scan failed";
+      try {
+        detail = JSON.parse(xhr.responseText).detail || detail;
+      } catch {
+        /* non-JSON error body */
+      }
+      reject(new Error(detail));
+    };
+    xhr.onerror = () =>
+      reject(new Error("Cannot reach the server. Is the backend running?"));
+    xhr.send(form);
   });
-  if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
-  return res.json();
 }
 
 export async function saveReceipt(payload) {
