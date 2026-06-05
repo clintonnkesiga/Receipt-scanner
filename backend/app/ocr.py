@@ -17,6 +17,43 @@ if settings.tesseract_cmd:
     pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
 
 
+def _rotate(img: np.ndarray, angle: int) -> np.ndarray:
+    """Rotate by a right angle (0/90/180/270, clockwise)."""
+    return {
+        0: img,
+        90: cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE),
+        180: cv2.rotate(img, cv2.ROTATE_180),
+        270: cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE),
+    }[angle % 360]
+
+
+def _best_orientation(img: np.ndarray) -> int:
+    """Probe 0/90/180/270 on a downscaled copy and return the angle Tesseract
+    reads with the highest confidence. Phone photos of receipts are often
+    sideways/upside-down, which _deskew (sub-degree tilt only) can't fix and
+    Tesseract's OSD detects unreliably on noisy thermal paper."""
+    h, w = img.shape[:2]
+    scale = 1000 / max(h, w) if max(h, w) > 1000 else 1.0
+    small = (
+        cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        if scale != 1.0
+        else img
+    )
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    best_angle, best_conf = 0, -1.0
+    for angle in (0, 90, 180, 270):
+        tmp = _write_temp(_rotate(gray, angle))
+        try:
+            _, conf = _ocr_path(tmp)
+        except Exception:
+            conf = -1.0
+        finally:
+            _safe_remove(tmp)
+        if conf > best_conf:
+            best_angle, best_conf = angle, conf
+    return best_angle
+
+
 def _deskew(gray: np.ndarray) -> np.ndarray:
     """Rotate the image so text lines are horizontal."""
     coords = np.column_stack(np.where(gray < 128))
@@ -119,18 +156,32 @@ def run_ocr(file_path: str) -> str:
         except Exception:
             return ""
 
+    img = cv2.imread(file_path)
+    if img is None:
+        # Unreadable by OpenCV — let Tesseract try the file directly.
+        try:
+            return _ocr_path(file_path)[0]
+        except Exception:
+            return ""
+
+    # Correct page orientation first (90°/180° phone photos) — otherwise all
+    # downstream OCR is garbage no matter how good the thresholding is.
+    angle = _best_orientation(img)
+    if angle:
+        img = _rotate(img, angle)
+
     # Photos of thermal receipts OCR better after preprocessing; clean digital
-    # scans OCR better raw. Run both and keep whichever Tesseract is more
-    # confident about (raw is tried first, so it wins ties).
-    tmp = None
+    # scans OCR better raw. Run both on the oriented image and keep whichever
+    # Tesseract is more confident about (raw is tried first, so it wins ties).
+    candidates = [_write_temp(img)]
     try:
-        tmp = _write_temp(preprocess(file_path))
+        candidates.append(_write_temp(_preprocess_array(img)))
     except Exception:
-        tmp = None
+        pass
 
     best_text, best_conf = "", -2.0
     try:
-        for path in [file_path] + ([tmp] if tmp else []):
+        for path in candidates:
             try:
                 text, conf = _ocr_path(path)
             except Exception:
@@ -138,8 +189,8 @@ def run_ocr(file_path: str) -> str:
             if conf > best_conf:
                 best_text, best_conf = text, conf
     finally:
-        if tmp:
-            _safe_remove(tmp)
+        for path in candidates:
+            _safe_remove(path)
     return best_text
 
 

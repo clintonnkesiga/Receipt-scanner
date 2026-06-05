@@ -1,16 +1,27 @@
-import { getToken, logout } from "$lib/auth";
-import { goto } from "$app/navigation";
+import {
+  getToken,
+  logout
+} from "$lib/auth";
+import {
+  goto
+} from "$app/navigation";
 
 const BASE = "/api/receipts";
 
 function authHeaders(extra = {}) {
   const t = getToken();
-  return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+  return t ? {
+    ...extra,
+    Authorization: `Bearer ${t}`
+  } : extra;
 }
 
 // Centralised fetch: attaches the token and bounces to /login on 401.
 async function request(url, options = {}) {
-  const res = await fetch(url, { ...options, headers: authHeaders(options.headers) });
+  const res = await fetch(url, {
+    ...options,
+    headers: authHeaders(options.headers)
+  });
   if (res.status === 401) {
     logout();
     goto("/login");
@@ -21,12 +32,17 @@ async function request(url, options = {}) {
 
 // --- Auth ---
 export async function login(email, password) {
-  const body = new URLSearchParams({ username: email, password });
+  const body = new URLSearchParams({
+    username: email,
+    password
+  });
   let res;
   try {
     res = await fetch("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
       body,
     });
   } catch {
@@ -49,8 +65,13 @@ export async function getMe() {
 export async function changePassword(current_password, new_password) {
   const res = await request("/api/auth/change-password", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ current_password, new_password }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      current_password,
+      new_password
+    }),
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
@@ -68,7 +89,9 @@ export async function listUsers() {
 export async function createUser(payload) {
   const res = await request("/api/users", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -81,7 +104,9 @@ export async function createUser(payload) {
 export async function updateUser(id, patch) {
   const res = await request(`/api/users/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify(patch),
   });
   if (!res.ok) {
@@ -92,7 +117,9 @@ export async function updateUser(id, patch) {
 }
 
 export async function deleteUser(id) {
-  const res = await request(`/api/users/${id}`, { method: "DELETE" });
+  const res = await request(`/api/users/${id}`, {
+    method: "DELETE"
+  });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
     throw new Error(typeof detail === "string" ? detail : "Could not delete user");
@@ -102,8 +129,12 @@ export async function deleteUser(id) {
 export async function resetUserPassword(id, new_password) {
   const res = await request(`/api/users/${id}/reset-password`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ new_password }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      new_password
+    }),
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
@@ -121,8 +152,12 @@ export async function listCategories() {
 export async function createCategory(name) {
   const res = await request("/api/categories", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      name
+    }),
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
@@ -134,8 +169,12 @@ export async function createCategory(name) {
 export async function updateCategory(id, name) {
   const res = await request(`/api/categories/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      name
+    }),
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
@@ -145,7 +184,9 @@ export async function updateCategory(id, name) {
 }
 
 export async function deleteCategory(id) {
-  const res = await request(`/api/categories/${id}`, { method: "DELETE" });
+  const res = await request(`/api/categories/${id}`, {
+    method: "DELETE"
+  });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail;
     throw new Error(typeof detail === "string" ? detail : "Could not delete category");
@@ -156,7 +197,10 @@ export async function deleteCategory(id) {
 export async function scanReceipt(file) {
   const form = new FormData();
   form.append("file", file);
-  const res = await request(`${BASE}/scan`, { method: "POST", body: form });
+  const res = await request(`${BASE}/scan`, {
+    method: "POST",
+    body: form
+  });
   if (!res.ok) throw new Error((await res.json()).detail || "Scan failed");
   return res.json();
 }
@@ -164,7 +208,9 @@ export async function scanReceipt(file) {
 export async function saveReceipt(payload) {
   const res = await request(BASE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json"
+    },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error("Save failed");
@@ -194,8 +240,25 @@ export async function getReceiptImageUrl(id) {
 }
 
 export async function deleteReceipt(id) {
-  const res = await request(`${BASE}/${id}`, { method: "DELETE" });
+  const res = await request(`${BASE}/${id}`, {
+    method: "DELETE"
+  });
   if (!res.ok) throw new Error("Delete failed");
+}
+
+export async function updateReceipt(id, patch) {
+  const res = await request(`${BASE}/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not update receipt");
+  }
+  return res.json();
 }
 
 // Export needs the token in a header, so fetch as a blob and trigger download

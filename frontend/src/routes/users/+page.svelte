@@ -9,13 +9,12 @@
     resetUserPassword,
   } from "$lib/api";
   import { currentUser } from "$lib/auth";
+  import { toasts } from "$lib/toast.js";
   import PasswordInput from "$lib/components/PasswordInput.svelte";
 
   const ROLES = ["user", "admin", "superadmin"];
 
   let users = $state([]);
-  let error = $state("");
-  let success = $state("");
 
   // Inline password-reset state (which row is open + its new value).
   let resetId = $state(null);
@@ -29,12 +28,11 @@
     try {
       users = await listUsers();
     } catch (e) {
-      error = e.message;
+      toasts.error(e instanceof Error ? e.message : "Could not load users");
     }
   }
 
   onMount(async () => {
-    // Page-level guard: super-admin only (the shell already ensured auth).
     if ($currentUser?.role !== "superadmin") {
       goto("/");
       return;
@@ -44,56 +42,62 @@
 
   async function onCreate(e) {
     e.preventDefault();
-    error = "";
     creating = true;
     try {
       await createUser({ ...form });
       form = { email: "", full_name: "", password: "", role: "user" };
       await refresh();
+      toasts.success("User created");
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not create user",
+      );
     } finally {
       creating = false;
     }
   }
 
   async function onRoleChange(u, role) {
-    error = "";
     try {
       await updateUser(u.id, { role });
       await refresh();
+      toasts.success(`Role updated to ${role}`);
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not update role",
+      );
       await refresh();
     }
   }
 
   async function onToggleActive(u) {
-    error = "";
     try {
       await updateUser(u.id, { is_active: !u.is_active });
       await refresh();
+      toasts.success(u.is_active ? "User deactivated" : "User activated");
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not update user",
+      );
     }
   }
 
   async function onDelete(u) {
     if (!confirm(`Delete user ${u.email}?`)) return;
-    error = "";
     try {
       await deleteUser(u.id);
       await refresh();
+      toasts.success(`User ${u.email} deleted`);
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not delete user",
+      );
     }
   }
 
   function startReset(u) {
     resetId = u.id;
     resetValue = "";
-    error = "";
-    success = "";
   }
 
   function cancelReset() {
@@ -103,16 +107,17 @@
 
   async function submitReset(u) {
     if (resetValue.length < 8) {
-      error = "New password must be at least 8 characters";
+      toasts.error("New password must be at least 8 characters");
       return;
     }
-    error = "";
     try {
       await resetUserPassword(u.id, resetValue);
-      success = `Password reset for ${u.email}.`;
+      toasts.success(`Password reset for ${u.email}`);
       cancelReset();
     } catch (err) {
-      error = err.message;
+      toasts.error(
+        err instanceof Error ? err.message : "Could not reset password",
+      );
     }
   }
 </script>
@@ -120,21 +125,13 @@
 <div class="w-full px-6 py-8 space-y-6">
   <h1 class="text-2xl font-semibold">User management</h1>
 
-  {#if error}
-    <div class="bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm">
-      {error}
-    </div>
-  {/if}
-  {#if success}
-    <div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg p-3 text-sm">
-      {success}
-    </div>
-  {/if}
-
   <!-- Create user -->
   <section class="bg-white rounded-xl shadow-sm p-5">
     <h2 class="font-semibold mb-3">Add a user</h2>
-    <form onsubmit={onCreate} class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+    <form
+      onsubmit={onCreate}
+      class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
+    >
       <label class="text-sm md:col-span-2">
         <span class="font-medium">Email</span>
         <input
@@ -179,7 +176,9 @@
         {creating ? "Adding…" : "Add user"}
       </button>
     </form>
-    <p class="text-xs text-slate-400 mt-2">Password must be at least 8 characters.</p>
+    <p class="text-xs text-slate-400 mt-2">
+      Password must be at least 8 characters.
+    </p>
   </section>
 
   <!-- User list -->
@@ -200,7 +199,9 @@
           <tr class="border-b last:border-0">
             <td class="py-2">
               {u.email}
-              {#if u.id === $currentUser?.id}<span class="text-xs text-slate-400">(you)</span>{/if}
+              {#if u.id === $currentUser?.id}<span
+                  class="text-xs text-slate-400">(you)</span
+                >{/if}
             </td>
             <td>{u.full_name || "—"}</td>
             <td>

@@ -82,6 +82,15 @@ class ReceiptCreate(ReceiptBase):
     line_items: list[LineItemBase] = []
 
 
+class ReceiptUpdate(BaseModel):
+    """Partial update for an existing receipt (PATCH — all fields optional)."""
+    merchant: str | None = None
+    purchase_date: date | None = None
+    total: Decimal | None = None
+    currency: str | None = None
+    category: str | None = None
+
+
 class ReceiptOut(ReceiptBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

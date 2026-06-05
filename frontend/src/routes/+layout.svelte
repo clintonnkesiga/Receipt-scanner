@@ -4,6 +4,7 @@
   import { goto } from "$app/navigation";
   import { getToken, logout, currentUser } from "$lib/auth";
   import { getMe } from "$lib/api";
+  import Toast from "$lib/components/Toast.svelte";
 
   let { children } = $props();
 
@@ -61,7 +62,9 @@
 {:else if $currentUser}
   <div class="min-h-screen flex bg-slate-50 text-slate-800">
     <aside class="w-60 shrink-0 bg-white border-r flex flex-col">
-      <div class="px-5 py-5 text-lg font-semibold flex items-center gap-2 border-b">
+      <div
+        class="px-5 py-5 text-lg font-semibold flex items-center gap-2 border-b"
+      >
         <span>🧾</span> Receipt Scanner
       </div>
       <nav class="flex-1 p-3 space-y-1">
@@ -82,7 +85,9 @@
         <div class="text-sm font-medium truncate" title={$currentUser.email}>
           {$currentUser.email}
         </div>
-        <div class="text-xs text-slate-400 capitalize mb-2">{$currentUser.role}</div>
+        <div class="text-xs text-slate-400 capitalize mb-2">
+          {$currentUser.role}
+        </div>
         <button
           onclick={onLogout}
           class="text-sm text-slate-500 hover:text-red-600"
@@ -97,7 +102,11 @@
     </div>
   </div>
 {:else}
-  <div class="min-h-screen flex items-center justify-center text-slate-400 text-sm">
+  <div
+    class="min-h-screen flex items-center justify-center text-slate-400 text-sm"
+  >
     Loading…
   </div>
 {/if}
+
+<Toast />

@@ -17,6 +17,11 @@ GROCERY_HINTS = ("supermarket", "mart", "grocery", "store", "qty", "vat", "cashi
 # Lines containing these usually hold the grand total.
 TOTAL_KEYWORDS = ("grand total", "total due", "amount due", "total", "balance")
 
+# Lines that contain "total" but are NOT the grand total — tender/change/tax
+# rows. "Tendered Total 50,000" must not be mistaken for the bill total.
+NON_TOTAL_HINTS = ("subtotal", "sub total", "tendered", "tender", "change",
+                   "cash", "card", "tax", "vat", "balance due")
+
 # Grab a full number run including thousands/decimal separators, e.g.
 # "150,450", "1,234.56", "12.50", "127500". _to_decimal() then disambiguates
 # whether a separator is a thousands marker or a decimal point.
@@ -26,6 +31,16 @@ DATE_PATTERNS = [
     (r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b", "%Y-%m-%d"),
     (r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b", "%d-%m-%Y"),
     (r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})\b", "%d-%m-%y"),
+]
+
+# Month names → number, for textual dates like "17 Mar 2026" or "Mar 17, 2026".
+MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun",
+     "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+
+TEXT_DATE_PATTERNS = [
+    (r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?\,?\s+(\d{4})\b", "dmy"),  # 17 Mar 2026
+    (r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2})\,?\s+(\d{4})\b", "mdy"),  # Mar 17, 2026
 ]
 
 # Unambiguous textual currency markers (ISO codes / local spellings). Checked
@@ -73,6 +88,9 @@ def _find_total(lines: list[str]) -> Decimal | None:
     candidate = None
     for line in lines:
         low = line.lower()
+        # Skip tender/change/tax rows that also contain the word "total".
+        if any(k in low for k in NON_TOTAL_HINTS):
+            continue
         if any(k in low for k in TOTAL_KEYWORDS):
             amounts = _money_tokens(line)
             if amounts:
@@ -96,12 +114,24 @@ def _find_total(lines: list[str]) -> Decimal | None:
 
 
 def _find_date(text: str) -> date | None:
+    # Numeric formats first. finditer (not search) so a non-date match like a
+    # time "13.33.23" doesn't abort the whole pattern.
     for pattern, fmt in DATE_PATTERNS:
-        m = re.search(pattern, text)
-        if m:
+        for m in re.finditer(pattern, text):
             try:
-                parts = "-".join(m.groups())
-                return datetime.strptime(parts, fmt).date()
+                return datetime.strptime("-".join(m.groups()), fmt).date()
+            except ValueError:
+                continue
+    # Then textual months, e.g. "17 Mar 2026".
+    for pattern, order in TEXT_DATE_PATTERNS:
+        for m in re.finditer(pattern, text):
+            a, b, year = m.groups()
+            day, mon = (a, b) if order == "dmy" else (b, a)
+            month = MONTHS.get(mon[:3].lower())
+            if not month:
+                continue
+            try:
+                return date(int(year), month, int(day))
             except ValueError:
                 continue
     return None
@@ -122,7 +152,14 @@ def _find_currency(text: str) -> str:
 
 
 def _find_merchant(lines: list[str]) -> str | None:
-    # Heuristic: the first non-empty line with letters is usually the store name.
+    # The store name is near the top. Prefer the first of the leading lines that
+    # has a real word (>=4 letters) so OCR noise above the logo (e.g. "WA et")
+    # is skipped rather than taken as the name.
+    for line in lines[:6]:
+        stripped = line.strip()
+        if re.search(r"[A-Za-z]{4,}", stripped):
+            return stripped[:255]
+    # Fallback: the first line with any letters at all.
     for line in lines:
         stripped = line.strip()
         if len(stripped) >= 3 and re.search(r"[A-Za-z]", stripped):

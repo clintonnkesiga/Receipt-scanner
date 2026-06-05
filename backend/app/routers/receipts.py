@@ -293,6 +293,25 @@ def get_receipt_image(
     return FileResponse(receipt.image_path)
 
 
+@router.patch("/{receipt_id}", response_model=schemas.ReceiptOut)
+def update_receipt(
+    receipt_id: int,
+    payload: schemas.ReceiptUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Partially update a receipt's editable fields."""
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    update_data = payload.model_dump(exclude_unset=True)
+    if "total" in update_data:
+        update_data["total"] = _fit(update_data["total"])
+    for field, value in update_data.items():
+        setattr(receipt, field, value)
+    db.commit()
+    db.refresh(receipt)
+    return receipt
+
+
 @router.delete("/{receipt_id}", status_code=204)
 def delete_receipt(
     receipt_id: int,
