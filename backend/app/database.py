@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
@@ -31,3 +31,25 @@ def init_db():
     from . import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    run_migrations()
+
+
+# Lightweight, idempotent schema patches for columns create_all can't add to
+# existing tables. Replace with Alembic once the schema churns more.
+_MIGRATIONS = (
+    # Per-user categories: add owner_id, drop the old global-unique-by-name
+    # constraint/index, and make names unique within an owner instead.
+    "ALTER TABLE categories ADD COLUMN IF NOT EXISTS owner_id INTEGER "
+    "REFERENCES users(id) ON DELETE SET NULL",
+    "ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_name_key",
+    "DROP INDEX IF EXISTS ix_categories_name",
+    "CREATE INDEX IF NOT EXISTS ix_categories_owner_id ON categories (owner_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_owner_name "
+    "ON categories (owner_id, name)",
+)
+
+
+def run_migrations() -> None:
+    with engine.begin() as conn:
+        for stmt in _MIGRATIONS:
+            conn.execute(text(stmt))

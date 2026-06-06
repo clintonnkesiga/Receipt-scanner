@@ -130,41 +130,17 @@
     $currentUser?.role === "admin" || $currentUser?.role === "superadmin",
   );
 
-  // --- Filter → sort → paginate (all client-side over the full list) ---
-  const filtered = $derived.by(() => {
-    const q = search.trim().toLowerCase();
-    let list = receipts.filter(
-      (r) =>
-        (!filter || r.category === filter) &&
-        (!q || (r.merchant || "").toLowerCase().includes(q)),
-    );
-    const num = (r) => Number(r.total) || 0;
-    const day = (r) => r.purchase_date || ""; // ISO dates sort lexicographically
-    const cmp = {
-      date_desc: (a, b) => day(b).localeCompare(day(a)),
-      date_asc: (a, b) => day(a).localeCompare(day(b)),
-      total_desc: (a, b) => num(b) - num(a),
-      total_asc: (a, b) => num(a) - num(b),
-    }[sort];
-    return [...list].sort(cmp);
-  });
+  // --- Server-side filter / sort / paginate ---
+  // `receipts` holds only the current page; the backend returns the count and
+  // summed total across the whole filtered set.
+  let totalCount = $state(0);
+  let totalSum = $state(0);
+  let loading = $state(false);
 
-  const total = $derived(
-    filtered.reduce((sum, r) => sum + (Number(r.total) || 0), 0),
-  );
-
-  const pageCount = $derived(
-    Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)),
-  );
-
-  // Keep the page in range as the result set shrinks (filtering, deletes).
-  $effect(() => {
-    if (page > pageCount) page = pageCount;
-  });
-
-  const paged = $derived(
-    filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-  );
+  const hasFilters = $derived(!!(search.trim() || filter));
+  const pageCount = $derived(Math.max(1, Math.ceil(totalCount / PAGE_SIZE)));
+  const rangeStart = $derived(totalCount ? (page - 1) * PAGE_SIZE + 1 : 0);
+  const rangeEnd = $derived(Math.min(page * PAGE_SIZE, totalCount));
 
   // Windowed page list: numbers + null (= ellipsis gap) for the pagination bar.
   // Always shows page 1, last page, current ±1, with "…" for any gaps.
@@ -189,7 +165,7 @@
   // Gallery groups the current page by category, sorted by name; "uncategorized" last.
   const grouped = $derived.by(() => {
     const map = new Map();
-    for (const r of paged) {
+    for (const r of receipts) {
       const key = r.category || "uncategorized";
       (map.get(key) ?? map.set(key, []).get(key)).push(r);
     }
@@ -202,24 +178,65 @@
 
   // The order the viewer steps through — matches what's shown on the current page.
   const orderedReceipts = $derived(
-    view === "gallery" ? grouped.flatMap(([, items]) => items) : paged,
+    view === "gallery" ? grouped.flatMap(([, items]) => items) : receipts,
   );
 
-  // Inclusive 1-based range of the current page, e.g. "1–12 of 37".
-  const rangeStart = $derived(filtered.length ? (page - 1) * PAGE_SIZE + 1 : 0);
-  const rangeEnd = $derived(Math.min(page * PAGE_SIZE, filtered.length));
-
-  async function refresh() {
+  // Fetch the current page from the server. Clamps the page back into range if
+  // the result set shrank (e.g. after a delete or a new filter).
+  async function load() {
+    loading = true;
     try {
-      receipts = await listReceipts();
+      const params = {
+        q: search.trim(),
+        category: filter,
+        sort,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      };
+      let data = await listReceipts(params);
+      const pc = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+      if (page > pc) {
+        page = pc;
+        data = await listReceipts({ ...params, offset: (page - 1) * PAGE_SIZE });
+      }
+      receipts = data.items;
+      totalCount = data.total;
+      totalSum = Number(data.total_sum) || 0;
     } catch (e) {
       toasts.error(e instanceof Error ? e.message : "Could not load receipts");
+    } finally {
+      loading = false;
     }
   }
 
-  function resetPage() {
-    page = 1;
+  // Filter/sort changes reset to page 1; reload. Search is debounced.
+  let searchTimer;
+  function onSearch(value) {
+    search = value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      page = 1;
+      load();
+    }, 300);
   }
+  function setFilter(value) {
+    filter = value;
+    page = 1;
+    load();
+  }
+  function setSort(value) {
+    sort = value;
+    page = 1;
+    load();
+  }
+  function goPage(p) {
+    if (p < 1 || p > pageCount || p === page) return;
+    page = p;
+    load();
+  }
+
+  // Kept as the post-mutation reload name used by save/delete handlers.
+  const refresh = load;
 
   onMount(async () => {
     try {
@@ -229,7 +246,7 @@
         e instanceof Error ? e.message : "Could not load categories",
       );
     }
-    await refresh();
+    await load();
   });
 
   async function onExport() {
@@ -380,7 +397,7 @@
     <button
       onclick={onExport}
       class="text-sm text-blue-600 hover:underline"
-      disabled={receipts.length === 0}
+      disabled={totalCount === 0}
     >
       Export CSV
     </button>
@@ -531,7 +548,7 @@
   <!-- History -->
   <section class="bg-white rounded-xl shadow-sm p-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <h2 class="font-semibold">History ({filtered.length})</h2>
+      <h2 class="font-semibold">History ({totalCount})</h2>
       <!-- Table / Gallery view toggle -->
       <div
         class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm"
@@ -565,20 +582,14 @@
         type="search"
         placeholder="Search merchant…"
         value={search}
-        oninput={(e) => {
-          search = e.currentTarget.value;
-          resetPage();
-        }}
+        oninput={(e) => onSearch(e.currentTarget.value)}
         class="rounded-lg border border-slate-300 p-1.5 text-sm w-48"
       />
       <label class="text-sm text-slate-500 flex items-center gap-2">
         Category
         <select
           value={filter}
-          onchange={(e) => {
-            filter = e.currentTarget.value;
-            resetPage();
-          }}
+          onchange={(e) => setFilter(e.currentTarget.value)}
           class="rounded-lg border border-slate-300 p-1.5 text-sm capitalize"
         >
           <option value="">All</option>
@@ -591,10 +602,7 @@
         Sort
         <select
           value={sort}
-          onchange={(e) => {
-            sort = e.currentTarget.value;
-            resetPage();
-          }}
+          onchange={(e) => setSort(e.currentTarget.value)}
           class="rounded-lg border border-slate-300 p-1.5 text-sm"
         >
           <option value="date_desc">Newest first</option>
@@ -603,17 +611,21 @@
           <option value="total_asc">Lowest total</option>
         </select>
       </label>
-      {#if filtered.length}
+      {#if totalCount}
         <span class="text-sm text-slate-500 ml-auto">
-          Total: {total.toLocaleString()}
+          Total: {totalSum.toLocaleString()}
         </span>
       {/if}
     </div>
 
-    {#if receipts.length === 0}
-      <p class="text-sm text-slate-500">No receipts yet — upload one above.</p>
-    {:else if filtered.length === 0}
-      <p class="text-sm text-slate-500">No receipts match your filters.</p>
+    {#if loading && receipts.length === 0}
+      <p class="text-sm text-slate-500 animate-pulse">Loading…</p>
+    {:else if totalCount === 0}
+      <p class="text-sm text-slate-500">
+        {hasFilters
+          ? "No receipts match your filters."
+          : "No receipts yet — upload one above."}
+      </p>
     {:else if view === "gallery"}
       <div class="space-y-8">
         {#each grouped as [cat, items] (cat)}
@@ -655,7 +667,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each paged as r (r.id)}
+          {#each receipts as r (r.id)}
             <tr class="border-b last:border-0 hover:bg-slate-50">
               <td class="py-2">{r.merchant || "—"}</td>
               {#if isElevated}
@@ -705,19 +717,19 @@
     {/if}
 
     <!-- Pagination -->
-    {#if filtered.length > 0}
+    {#if totalCount > 0}
       <div
         class="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100"
       >
         <span class="text-sm text-slate-500">
-          Showing {rangeStart}–{rangeEnd} of {filtered.length}
+          Showing {rangeStart}–{rangeEnd} of {totalCount}
         </span>
         {#if pageCount > 1}
           <div class="flex items-center gap-1">
             <button
               type="button"
-              onclick={() => (page = Math.max(1, page - 1))}
-              disabled={page <= 1}
+              onclick={() => goPage(page - 1)}
+              disabled={page <= 1 || loading}
               class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Prev
@@ -728,7 +740,7 @@
               {:else}
                 <button
                   type="button"
-                  onclick={() => (page = p)}
+                  onclick={() => goPage(p)}
                   class="w-8 h-8 text-sm rounded-lg border {page === p
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'border-slate-300 text-slate-600 hover:bg-slate-50'}"
@@ -739,8 +751,8 @@
             {/each}
             <button
               type="button"
-              onclick={() => (page = Math.min(pageCount, page + 1))}
-              disabled={page >= pageCount}
+              onclick={() => goPage(page + 1)}
+              disabled={page >= pageCount || loading}
               class="px-3 py-1.5 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next

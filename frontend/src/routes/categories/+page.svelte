@@ -1,6 +1,5 @@
 <script>
   import { onMount } from "svelte";
-  import { goto } from "$app/navigation";
   import {
     listCategories,
     createCategory,
@@ -21,9 +20,16 @@
   let editId = $state(null);
   let editValue = $state("");
 
-  const canManage = $derived(
+  // Admins can manage the shared/system defaults (owner_id === null);
+  // everyone manages categories they own.
+  const isAdmin = $derived(
     $currentUser?.role === "admin" || $currentUser?.role === "superadmin",
   );
+  const me = $derived($currentUser?.id);
+
+  function editable(c) {
+    return c.owner_id === me || (c.owner_id == null && isAdmin);
+  }
 
   async function refresh() {
     try {
@@ -36,10 +42,6 @@
   }
 
   onMount(async () => {
-    if ($currentUser && !canManage) {
-      goto("/");
-      return;
-    }
     await refresh();
   });
 
@@ -119,6 +121,8 @@
   <p class="text-sm text-slate-500">
     Group receipts by type — e.g. supermarket, fuel station, restaurant. These
     options appear when reviewing a receipt and as filters on the receipts list.
+    You see the <span class="font-medium">shared</span> defaults plus any you add,
+    and you can manage your own.
   </p>
 
   <!-- Add category -->
@@ -172,18 +176,27 @@
               </button>
             {:else}
               <span class="flex-1 capitalize">{c.name}</span>
-              <button
-                onclick={() => startEdit(c)}
-                class="text-blue-600 hover:underline text-xs"
-              >
-                edit
-              </button>
-              <button
-                onclick={() => (pendingDelete = c)}
-                class="text-red-600 hover:underline text-xs"
-              >
-                delete
-              </button>
+              {#if c.owner_id == null}
+                <span
+                  class="text-[10px] uppercase tracking-wide rounded-full bg-slate-100 text-slate-500 px-2 py-0.5"
+                >
+                  shared
+                </span>
+              {/if}
+              {#if editable(c)}
+                <button
+                  onclick={() => startEdit(c)}
+                  class="text-blue-600 hover:underline text-xs"
+                >
+                  edit
+                </button>
+                <button
+                  onclick={() => (pendingDelete = c)}
+                  class="text-red-600 hover:underline text-xs"
+                >
+                  delete
+                </button>
+              {/if}
             {/if}
           </li>
         {/each}

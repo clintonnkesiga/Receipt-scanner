@@ -118,23 +118,55 @@ def create_receipt(
     return receipt
 
 
-@router.get("", response_model=list[schemas.ReceiptOut])
+@router.get("", response_model=schemas.ReceiptPage)
 def list_receipts(
+    q: str | None = None,
     category: str | None = None,
+    sort: str = "date_desc",
+    limit: int = 12,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    stmt = select(models.Receipt).options(
-        selectinload(models.Receipt.line_items),
-        selectinload(models.Receipt.owner),
-    )
+    """A page of receipts with server-side search/filter/sort, plus the count
+    and summed total across the whole filtered set (not just this page)."""
+    R = models.Receipt
+    limit = max(1, min(limit, 100))  # clamp page size
+    offset = max(0, offset)
+
+    conds = []
     # Regular users only see their own receipts; admins/superadmins see all.
     if not _sees_all(current_user):
-        stmt = stmt.where(models.Receipt.owner_id == current_user.id)
+        conds.append(R.owner_id == current_user.id)
     if category:
-        stmt = stmt.where(models.Receipt.category == category)
-    stmt = stmt.order_by(models.Receipt.created_at.desc())
-    return db.scalars(stmt).all()
+        conds.append(R.category == category)
+    if q:
+        conds.append(R.merchant.ilike(f"%{q}%"))
+
+    # Count + sum over the full filtered set (drives totals + pagination).
+    total, total_sum = db.execute(
+        select(func.count(R.id), func.coalesce(func.sum(R.total), 0)).where(*conds)
+    ).one()
+
+    order = {
+        "date_desc": R.purchase_date.desc().nullslast(),
+        "date_asc": R.purchase_date.asc().nullslast(),
+        "total_desc": R.total.desc().nullslast(),
+        "total_asc": R.total.asc().nullslast(),
+    }.get(sort, R.purchase_date.desc().nullslast())
+
+    items = db.scalars(
+        select(R)
+        .where(*conds)
+        .options(selectinload(R.line_items), selectinload(R.owner))
+        .order_by(order, R.id.desc())  # id as a stable tiebreaker
+        .limit(limit)
+        .offset(offset)
+    ).all()
+
+    return schemas.ReceiptPage(
+        items=items, total=total, total_sum=total_sum, limit=limit, offset=offset
+    )
 
 
 @router.get("/export.csv")

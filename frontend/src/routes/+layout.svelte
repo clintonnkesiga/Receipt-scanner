@@ -30,16 +30,10 @@
     }
   });
 
-  const isAdmin = $derived(
-    $currentUser?.role === "admin" || $currentUser?.role === "superadmin",
-  );
-
   const links = $derived([
     { href: "/dashboard", label: "Dashboard", icon: "📊" },
     { href: "/", label: "Receipts", icon: "🧾" },
-    ...(isAdmin
-      ? [{ href: "/categories", label: "Categories", icon: "🏷️" }]
-      : []),
+    { href: "/categories", label: "Categories", icon: "🏷️" },
     ...($currentUser?.role === "superadmin"
       ? [{ href: "/users", label: "Users", icon: "👥" }]
       : []),

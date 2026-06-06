@@ -251,9 +251,21 @@ export async function saveReceipt(payload) {
   return res.json();
 }
 
-export async function listReceipts(category) {
-  const qs = category ? `?category=${encodeURIComponent(category)}` : "";
-  const res = await request(`${BASE}${qs}`);
+// Server-side paged list. Returns { items, total, total_sum, limit, offset }.
+export async function listReceipts({
+  q = "",
+  category = "",
+  sort = "date_desc",
+  limit = 12,
+  offset = 0,
+} = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (category) params.set("category", category);
+  if (sort) params.set("sort", sort);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  const res = await request(`${BASE}?${params}`);
   if (!res.ok) throw new Error("Could not load receipts");
   return res.json();
 }

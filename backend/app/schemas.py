@@ -53,6 +53,7 @@ class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+    owner_id: int | None = None  # None = shared/system default
 
 
 class LineItemBase(BaseModel):
@@ -100,6 +101,15 @@ class ReceiptOut(ReceiptBase):
     raw_ocr_text: str | None = None
     created_at: datetime
     line_items: list[LineItemOut] = []
+
+
+class ReceiptPage(BaseModel):
+    """One page of receipts plus totals across the whole filtered set."""
+    items: list[ReceiptOut]
+    total: int          # count of all matching receipts
+    total_sum: Decimal  # summed total across all matches (mixes currencies)
+    limit: int
+    offset: int
 
 
 class ScanResult(BaseModel):
