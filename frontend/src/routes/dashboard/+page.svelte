@@ -50,7 +50,7 @@
   });
 </script>
 
-<div class="w-full px-6 py-8 space-y-6">
+<div class="w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
   <h1 class="text-2xl font-semibold">Dashboard</h1>
 
   {#if error}

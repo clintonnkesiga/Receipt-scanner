@@ -61,7 +61,7 @@
   }
 </script>
 
-<div class="w-full px-6 py-8 space-y-6">
+<div class="w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-semibold">Activity log</h1>
     {#if total > 0}
@@ -79,7 +79,8 @@
     {:else if items.length === 0}
       <div class="p-8 text-center text-sm text-slate-500">No activity recorded yet.</div>
     {:else}
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
         <thead class="text-left text-slate-500 border-b bg-slate-50">
           <tr>
             <th class="py-2 px-4">Event</th>
@@ -106,6 +107,7 @@
           {/each}
         </tbody>
       </table>
+      </div>
 
       {#if pageCount > 1}
         <div class="flex items-center justify-between px-4 py-3 border-t text-sm">

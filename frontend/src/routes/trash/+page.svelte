@@ -61,7 +61,7 @@
     v != null ? `${cur || ""} ${Number(v).toLocaleString()}`.trim() : "—";
 </script>
 
-<div class="w-full px-6 py-8 space-y-6">
+<div class="w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
   <div>
     <h1 class="text-2xl font-semibold">Trash</h1>
     <p class="text-sm text-slate-500 dark:text-slate-400">
@@ -78,7 +78,8 @@
         <p class="text-sm text-slate-500 dark:text-slate-400">The Trash is empty.</p>
       </div>
     {:else}
-      <table class="w-full text-sm">
+      <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[600px]">
         <thead class="text-left text-slate-500 dark:text-slate-400 border-b dark:border-slate-700">
           <tr>
             <th class="py-2">Merchant</th>
@@ -107,6 +108,7 @@
           {/each}
         </tbody>
       </table>
+      </div>
     {/if}
   </section>
 </div>
