@@ -12,7 +12,7 @@
   <input
     type={visible ? "text" : "password"}
     bind:value
-    class={`block w-full rounded-lg border border-slate-300 p-2 pr-10 ${className}`}
+    class={`block w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 p-2 pr-10 ${className}`}
     {...rest}
   />
   <button

@@ -31,29 +31,27 @@ async function request(url, options = {}) {
 }
 
 // --- Auth ---
-export async function login(email, password) {
-  const body = new URLSearchParams({
-    username: email,
-    password
-  });
+export async function login(email, password, totp_code = null) {
+  const body = new URLSearchParams({ username: email, password });
+  if (totp_code) body.set("totp_code", totp_code);
   let res;
   try {
     res = await fetch("/api/auth/login", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
     });
   } catch {
-    // Network/proxy failure — backend almost certainly isn't running.
     throw new Error("Cannot reach the server. Is the backend running on :8000?");
   }
-  if (res.status === 401) throw new Error("Incorrect email or password");
-  if (!res.ok) {
-    throw new Error(`Login failed (server error ${res.status}). Is the backend running?`);
+  if (res.status === 403) {
+    const data = await res.json().catch(() => ({}));
+    if (data.detail === "mfa_required") throw new Error("mfa_required");
+    throw new Error(data.detail || "Account is disabled");
   }
-  return res.json(); // { access_token, token_type }
+  if (res.status === 401) throw new Error("Incorrect email or password");
+  if (!res.ok) throw new Error(`Login failed (server error ${res.status}). Is the backend running?`);
+  return res.json();
 }
 
 export async function getMe() {
@@ -77,6 +75,99 @@ export async function changePassword(current_password, new_password) {
     const detail = (await res.json().catch(() => ({}))).detail;
     throw new Error(detail || "Could not change password");
   }
+}
+
+export async function updateProfile(patch) {
+  const res = await request("/api/auth/profile", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not update profile");
+  }
+  return res.json();
+}
+
+export async function forgotPassword(email) {
+  const res = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Request failed");
+  }
+}
+
+export async function resetPassword(token, new_password) {
+  const res = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new_password }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Reset failed");
+  }
+}
+
+export async function sendVerification() {
+  const res = await request("/api/auth/send-verification", { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not send verification");
+  }
+}
+
+export async function verifyEmail(token) {
+  const params = new URLSearchParams({ token });
+  const res = await fetch(`/api/auth/verify-email?${params}`, { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Verification failed");
+  }
+}
+
+// --- 2FA ---
+export async function get2FASetup() {
+  const res = await request("/api/2fa/setup");
+  if (!res.ok) throw new Error("Could not start 2FA setup");
+  return res.json();
+}
+
+export async function enable2FA(code) {
+  const res = await request("/api/2fa/enable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not enable 2FA");
+  }
+}
+
+export async function disable2FA(code) {
+  const res = await request("/api/2fa/disable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not disable 2FA");
+  }
+}
+
+// --- Audit log ---
+export async function listAuditLog({ limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const res = await request(`/api/audit?${params}`);
+  if (!res.ok) throw new Error("Could not load audit log");
+  return res.json();
 }
 
 // --- User management (super-admin) ---
@@ -247,17 +338,28 @@ export async function saveReceipt(payload) {
     },
     body: JSON.stringify(payload),
   });
+  if (res.status === 409) {
+    // Duplicate guard tripped — surface a clear message (caller can re-send
+    // with force: true to override).
+    const detail = (await res.json().catch(() => ({}))).detail;
+    const msg = detail && typeof detail === "object" ? detail.message : detail;
+    throw new Error(msg || "This looks like a duplicate receipt.");
+  }
   if (!res.ok) throw new Error("Save failed");
   return res.json();
 }
 
-// Server-side paged list. Returns { items, total, total_sum, limit, offset }.
+// Server-side paged list. Returns { items, total, total_sum, normalized_sum, limit, offset }.
 export async function listReceipts({
   q = "",
   category = "",
   sort = "date_desc",
-  limit = 12,
+  limit = 20,
   offset = 0,
+  date_from = "",
+  date_to = "",
+  amount_min = "",
+  amount_max = "",
 } = {}) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -265,6 +367,10 @@ export async function listReceipts({
   if (sort) params.set("sort", sort);
   params.set("limit", String(limit));
   params.set("offset", String(offset));
+  if (date_from) params.set("date_from", date_from);
+  if (date_to) params.set("date_to", date_to);
+  if (amount_min !== "") params.set("amount_min", String(amount_min));
+  if (amount_max !== "") params.set("amount_max", String(amount_max));
   const res = await request(`${BASE}?${params}`);
   if (!res.ok) throw new Error("Could not load receipts");
   return res.json();
@@ -273,6 +379,14 @@ export async function listReceipts({
 export async function getStats() {
   const res = await request(`${BASE}/stats`);
   if (!res.ok) throw new Error("Could not load stats");
+  return res.json();
+}
+
+// Single receipt by id (for the deep-linkable detail page).
+export async function getReceipt(id) {
+  const res = await request(`${BASE}/${id}`);
+  if (res.status === 404) throw new Error("Receipt not found");
+  if (!res.ok) throw new Error("Could not load receipt");
   return res.json();
 }
 
@@ -285,11 +399,37 @@ export async function getReceiptImageUrl(id) {
   return URL.createObjectURL(blob);
 }
 
+// Soft-delete: moves the receipt to the Trash (recoverable via restoreReceipt).
 export async function deleteReceipt(id) {
   const res = await request(`${BASE}/${id}`, {
     method: "DELETE"
   });
   if (!res.ok) throw new Error("Delete failed");
+}
+
+// --- Trash (soft-deleted receipts) ---
+export async function listTrash({ limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const res = await request(`${BASE}/trash?${params}`);
+  if (!res.ok) throw new Error("Could not load trash");
+  return res.json();
+}
+
+export async function restoreReceipt(id) {
+  const res = await request(`${BASE}/${id}/restore`, { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not restore receipt");
+  }
+  return res.json();
+}
+
+export async function permanentlyDeleteReceipt(id) {
+  const res = await request(`${BASE}/${id}/permanent`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not delete receipt");
+  }
 }
 
 export async function updateReceipt(id, patch) {
@@ -304,6 +444,51 @@ export async function updateReceipt(id, patch) {
     const detail = (await res.json().catch(() => ({}))).detail;
     throw new Error(typeof detail === "string" ? detail : "Could not update receipt");
   }
+  return res.json();
+}
+
+// --- Budgets ---
+export async function listBudgets() {
+  const res = await request("/api/budgets");
+  if (!res.ok) throw new Error("Could not load budgets");
+  return res.json();
+}
+
+export async function createBudget(payload) {
+  const res = await request("/api/budgets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not create budget");
+  }
+  return res.json();
+}
+
+export async function updateBudget(id, patch) {
+  const res = await request(`/api/budgets/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not update budget");
+  }
+  return res.json();
+}
+
+export async function deleteBudget(id) {
+  const res = await request(`/api/budgets/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Could not delete budget");
+}
+
+export async function getBudgetUsage(month = null) {
+  const url = month ? `/api/budgets/usage?month=${month}` : "/api/budgets/usage";
+  const res = await request(url);
+  if (!res.ok) throw new Error("Could not load budget usage");
   return res.json();
 }
 
@@ -326,6 +511,55 @@ export async function downloadCsv() {
   const a = document.createElement("a");
   a.href = url;
   a.download = "receipts.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Reports / analytics ---
+function qs(params) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== "" && v != null) p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
+export async function getTimeSeries({ granularity = "month", date_from = "", date_to = "" } = {}) {
+  const res = await request(`/api/reports/timeseries${qs({ granularity, date_from, date_to })}`);
+  if (!res.ok) throw new Error("Could not load time series");
+  return res.json();
+}
+
+export async function getRecurring() {
+  const res = await request("/api/reports/recurring");
+  if (!res.ok) throw new Error("Could not load recurring expenses");
+  return res.json();
+}
+
+export async function getDigestPreview() {
+  const res = await request("/api/reports/digest/preview");
+  if (!res.ok) throw new Error("Could not load digest preview");
+  return res.json();
+}
+
+export async function sendDigest() {
+  const res = await request("/api/reports/digest/send", { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not send digest");
+  }
+}
+
+// Download an export (xlsx | pdf), honoring an optional date range.
+export async function downloadExport(format, { date_from = "", date_to = "" } = {}) {
+  const res = await request(`/api/reports/export.${format}${qs({ date_from, date_to })}`);
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `receipts.${format}`;
   a.click();
   URL.revokeObjectURL(url);
 }

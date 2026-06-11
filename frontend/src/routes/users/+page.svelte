@@ -34,7 +34,7 @@
 
   onMount(async () => {
     if ($currentUser?.role !== "superadmin") {
-      goto("/");
+      goto("/receipts");
       return;
     }
     await refresh();

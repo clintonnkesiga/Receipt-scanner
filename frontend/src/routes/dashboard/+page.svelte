@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { getStats } from "$lib/api";
 
-  let stats = $state(null);
+  let stats = $state(/** @type {any} */ (null));
   let error = $state("");
 
   const fmt = (n) => Number(n || 0).toLocaleString();
@@ -193,6 +193,41 @@
           {/each}
         </div>
       </section>
+
+      <!-- Budget usage -->
+      {#if stats.budget_usage?.length}
+        <section class="bg-white rounded-xl shadow-sm p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold">Budgets — this month</h2>
+            <a href="/budgets" class="text-xs text-blue-600 hover:underline">Manage</a>
+          </div>
+          <div class="space-y-4">
+            {#each stats.budget_usage as u}
+              {@const pct = Math.min(100, Number(u.pct ?? 0))}
+              {@const over = Number(u.spent) > Number(u.budget.monthly_limit)}
+              <div>
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="capitalize font-medium">
+                    {u.budget.category ?? "All categories"}
+                    {#if over}<span class="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Over</span>{/if}
+                  </span>
+                  <span class="{over ? 'text-red-600 font-semibold' : 'text-slate-600'}">
+                    {fmt(u.spent)} / {fmt(u.budget.monthly_limit)}
+                    <span class="text-xs text-slate-400">({pct.toFixed(0)}%)</span>
+                  </span>
+                </div>
+                <div class="h-3 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-[width] duration-500
+                      {pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-400' : 'bg-emerald-400'}"
+                    style="width:{pct}%"
+                  ></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
 
       <!-- Charts: 1-col on mobile, 2-col on large screens -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">

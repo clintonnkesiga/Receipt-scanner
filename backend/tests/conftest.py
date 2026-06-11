@@ -134,6 +134,32 @@ def make_user(db):
 
 
 @pytest.fixture
+def make_receipt(db):
+    """Factory that inserts a receipt for a given owner, bypassing the OCR/scan
+    path so trash/list tests stay independent of storage + Tesseract."""
+    from decimal import Decimal
+
+    from app import models
+
+    def _make(owner, *, merchant="Acme", total="10.00", category="grocery",
+              purchase_date=None, image_path=None):
+        receipt = models.Receipt(
+            owner_id=owner.id,
+            merchant=merchant,
+            total=Decimal(total) if total is not None else None,
+            category=category,
+            purchase_date=purchase_date,
+            image_path=image_path,
+        )
+        db.add(receipt)
+        db.commit()
+        db.refresh(receipt)
+        return receipt
+
+    return _make
+
+
+@pytest.fixture
 def login(client):
     """Log a user in and return an Authorization header dict for them."""
 

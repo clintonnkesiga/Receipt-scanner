@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..config import settings
 from ..database import get_db
+from .. import audit as audit_mod
 from ..ocr import run_ocr
 from ..parser import parse_receipt
 from ..security import get_current_user
@@ -50,6 +51,53 @@ def _fit(value: Decimal | None, max_abs: Decimal = _MONEY_MAX) -> Decimal | None
         return None
 
 
+# How close two same-merchant, same-total receipts must be (in days) to count
+# as duplicates when no fiscal id is available — absorbs OCR date wobble.
+_DUP_DATE_WINDOW = timedelta(days=3)
+
+
+def _find_duplicates(
+    db: Session,
+    owner_id: int,
+    *,
+    merchant: str | None,
+    purchase_date,
+    total: Decimal | None,
+    fiscal_id: str | None,
+    exclude_id: int | None = None,
+    limit: int = 5,
+) -> list[models.Receipt]:
+    """Find likely duplicates of a receipt for one owner.
+
+    Strong signal: same `fiscal_id` (the unique transaction number printed on
+    the receipt) — immune to OCR date/total errors. Fallback when there's no
+    fiscal id: same merchant + same total within a few days.
+    """
+    R = models.Receipt
+    base = [R.owner_id == owner_id, R.deleted_at.is_(None)]
+    if exclude_id is not None:
+        base.append(R.id != exclude_id)
+    opts = (selectinload(R.line_items), selectinload(R.owner))
+
+    if fiscal_id:
+        rows = db.scalars(
+            select(R).where(*base, R.fiscal_id == fiscal_id).options(*opts).limit(limit)
+        ).all()
+        if rows:
+            return list(rows)
+
+    if merchant and total is not None:
+        conds = [*base, R.merchant.ilike(merchant), R.total == total]
+        if purchase_date:
+            conds.append(R.purchase_date >= purchase_date - _DUP_DATE_WINDOW)
+            conds.append(R.purchase_date <= purchase_date + _DUP_DATE_WINDOW)
+        return list(
+            db.scalars(select(R).where(*conds).options(*opts).limit(limit)).all()
+        )
+
+    return []
+
+
 @router.post("/scan", response_model=schemas.ScanResult)
 async def scan_receipt(
     file: UploadFile = File(...),
@@ -84,30 +132,19 @@ async def scan_receipt(
     parsed = parse_receipt(raw_text)
     parsed.image_path = filer_path
 
-    # Detect probable duplicates: same owner with matching merchant + date or total.
-    duplicates: list[models.Receipt] = []
-    if parsed.merchant and (parsed.purchase_date or parsed.total is not None):
-        R = models.Receipt
-        conds = [
-            R.owner_id == current_user.id,
-            R.merchant.ilike(parsed.merchant),
-        ]
-        if parsed.purchase_date:
-            conds.append(R.purchase_date == parsed.purchase_date)
-        if parsed.total is not None:
-            conds.append(R.total == parsed.total)
-        duplicates = db.scalars(
-            select(R)
-            .where(*conds)
-            .options(selectinload(R.line_items), selectinload(R.owner))
-            .limit(5)
-        ).all()
+    duplicates = _find_duplicates(
+        db, current_user.id,
+        merchant=parsed.merchant,
+        purchase_date=parsed.purchase_date,
+        total=parsed.total,
+        fiscal_id=parsed.fiscal_id,
+    )
 
     return schemas.ScanResult(
         image_path=filer_path,
         raw_ocr_text=raw_text,
         parsed=parsed,
-        duplicates=list(duplicates),
+        duplicates=duplicates,
     )
 
 
@@ -118,6 +155,25 @@ def create_receipt(
     current_user: models.User = Depends(get_current_user),
 ):
     """Persist a reviewed/corrected receipt, owned by the current user."""
+    # Block likely duplicates unless the user explicitly overrode (force=True).
+    if not payload.force:
+        dups = _find_duplicates(
+            db, current_user.id,
+            merchant=payload.merchant,
+            purchase_date=payload.purchase_date,
+            total=payload.total,
+            fiscal_id=payload.fiscal_id,
+        )
+        if dups:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "duplicate_receipt",
+                    "message": "This looks like a receipt you already saved.",
+                    "duplicate_ids": [d.id for d in dups],
+                },
+            )
+
     receipt = models.Receipt(
         owner_id=current_user.id,
         merchant=payload.merchant,
@@ -127,6 +183,10 @@ def create_receipt(
         category=payload.category,
         image_path=payload.image_path,
         raw_ocr_text=payload.raw_ocr_text,
+        fiscal_id=payload.fiscal_id,
+        tax_amount=_fit(payload.tax_amount),
+        net_amount=_fit(payload.net_amount),
+        fx_rate=payload.fx_rate,
         line_items=[
             models.LineItem(
                 description=li.description,
@@ -138,6 +198,8 @@ def create_receipt(
         ],
     )
     db.add(receipt)
+    audit_mod.record(db, current_user, "receipt.create", target_type="receipt",
+                     detail=receipt.merchant or "—")
     db.commit()
     db.refresh(receipt)
     return receipt
@@ -148,30 +210,47 @@ def list_receipts(
     q: str | None = None,
     category: str | None = None,
     sort: str = "date_desc",
-    limit: int = 12,
+    limit: int = 20,
     offset: int = 0,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """A page of receipts with server-side search/filter/sort, plus the count
-    and summed total across the whole filtered set (not just this page)."""
+    """A page of receipts with server-side search/filter/sort/date-range/amount-range."""
     R = models.Receipt
-    limit = max(1, min(limit, 100))  # clamp page size
+    limit = max(1, min(limit, 200))
     offset = max(0, offset)
 
-    conds = []
-    # Regular users only see their own receipts; admins/superadmins see all.
+    conds = [R.deleted_at.is_(None)]  # exclude trashed receipts
     if not _sees_all(current_user):
         conds.append(R.owner_id == current_user.id)
     if category:
         conds.append(R.category == category)
     if q:
         conds.append(R.merchant.ilike(f"%{q}%"))
+    if date_from:
+        conds.append(R.purchase_date >= date_from)
+    if date_to:
+        conds.append(R.purchase_date <= date_to)
+    if amount_min is not None:
+        conds.append(R.total >= amount_min)
+    if amount_max is not None:
+        conds.append(R.total <= amount_max)
 
     # Count + sum over the full filtered set (drives totals + pagination).
     total, total_sum = db.execute(
         select(func.count(R.id), func.coalesce(func.sum(R.total), 0)).where(*conds)
     ).one()
+
+    # Normalized sum: convert via fx_rate where available, fall back to raw total.
+    normalized_sum = db.execute(
+        select(func.coalesce(
+            func.sum(func.coalesce(R.total * R.fx_rate, R.total)), 0
+        )).where(*conds)
+    ).scalar_one()
 
     order = {
         "date_desc": R.purchase_date.desc().nullslast(),
@@ -184,13 +263,18 @@ def list_receipts(
         select(R)
         .where(*conds)
         .options(selectinload(R.line_items), selectinload(R.owner))
-        .order_by(order, R.id.desc())  # id as a stable tiebreaker
+        .order_by(order, R.id.desc())
         .limit(limit)
         .offset(offset)
     ).all()
 
     return schemas.ReceiptPage(
-        items=items, total=total, total_sum=total_sum, limit=limit, offset=offset
+        items=items,
+        total=total,
+        total_sum=total_sum,
+        normalized_sum=normalized_sum,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -202,6 +286,7 @@ def export_csv(
     """Export receipts (header-level) as CSV — handy for budgeting/taxes."""
     stmt = (
         select(models.Receipt)
+        .where(models.Receipt.deleted_at.is_(None))  # exclude trashed receipts
         .options(selectinload(models.Receipt.owner))
         .order_by(models.Receipt.purchase_date)
     )
@@ -230,6 +315,7 @@ def stats(
     """Aggregated spend for the dashboard, scoped to what the user may see."""
     R = models.Receipt
     scope = [] if _sees_all(current_user) else [R.owner_id == current_user.id]
+    scope.append(R.deleted_at.is_(None))  # exclude trashed receipts from all stats
     total = func.coalesce(func.sum(R.total), 0)
 
     overall = db.execute(
@@ -294,6 +380,31 @@ def stats(
     change_pct = float((cur - prev) / prev * 100) if prev else None
     month_trend = schemas.MonthTrend(current=cur, previous=prev, change_pct=change_pct)
 
+    # Budget usage for the current calendar month.
+    budgets = db.scalars(
+        select(models.Budget).where(models.Budget.owner_id == current_user.id)
+    ).all()
+    cur_month_start = today.replace(day=1)
+    budget_usage = []
+    for b in budgets:
+        spent_conds = [
+            models.Receipt.owner_id == current_user.id,
+            models.Receipt.deleted_at.is_(None),
+            models.Receipt.purchase_date >= cur_month_start,
+            models.Receipt.purchase_date <= today,
+        ]
+        if b.category is not None:
+            spent_conds.append(models.Receipt.category == b.category)
+        spent = db.execute(
+            select(func.coalesce(func.sum(models.Receipt.total), 0)).where(*spent_conds)
+        ).scalar_one()
+        pct = float(spent / b.monthly_limit * 100) if b.monthly_limit else None
+        budget_usage.append(schemas.BudgetUsage(
+            budget=schemas.BudgetOut.model_validate(b),
+            spent=spent,
+            pct=pct,
+        ))
+
     return schemas.ReceiptStats(
         total_spend=overall[0],
         receipt_count=overall[1],
@@ -323,17 +434,65 @@ def stats(
             else None
         ),
         month_trend=month_trend,
+        budget_usage=budget_usage,
     )
 
 
-def _get_owned_or_404(receipt_id: int, db: Session, user: models.User) -> models.Receipt:
-    """Fetch a receipt the user is allowed to see, else 404 (don't leak existence)."""
+def _get_owned_or_404(
+    receipt_id: int, db: Session, user: models.User, active_only: bool = False
+) -> models.Receipt:
+    """Fetch a receipt the user is allowed to see, else 404 (don't leak existence).
+
+    When ``active_only`` is set, a trashed (soft-deleted) receipt also 404s — used
+    by the edit/rescan/image paths that should never operate on Trash contents.
+    """
     receipt = db.get(models.Receipt, receipt_id)
     if receipt is None:
         raise HTTPException(404, "Receipt not found")
     if not _sees_all(user) and receipt.owner_id != user.id:
         raise HTTPException(404, "Receipt not found")
+    if active_only and receipt.deleted_at is not None:
+        raise HTTPException(404, "Receipt not found")
     return receipt
+
+
+@router.get("/trash", response_model=schemas.ReceiptPage)
+def list_trash(
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Receipts the user has soft-deleted, most-recently-trashed first."""
+    R = models.Receipt
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    conds = [R.deleted_at.is_not(None)]
+    if not _sees_all(current_user):
+        conds.append(R.owner_id == current_user.id)
+
+    total, total_sum = db.execute(
+        select(func.count(R.id), func.coalesce(func.sum(R.total), 0)).where(*conds)
+    ).one()
+
+    items = db.scalars(
+        select(R)
+        .where(*conds)
+        .options(selectinload(R.line_items), selectinload(R.owner))
+        .order_by(R.deleted_at.desc(), R.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+
+    return schemas.ReceiptPage(
+        items=items,
+        total=total,
+        total_sum=total_sum,
+        normalized_sum=None,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{receipt_id}", response_model=schemas.ReceiptOut)
@@ -352,7 +511,7 @@ async def get_receipt_image(
     current_user: models.User = Depends(get_current_user),
 ):
     """Serve the stored receipt image to its owner (or an admin)."""
-    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    receipt = _get_owned_or_404(receipt_id, db, current_user)  # trashed images still viewable
     if not receipt.image_path:
         raise HTTPException(404, "No image for this receipt")
     try:
@@ -372,7 +531,7 @@ def update_receipt(
     current_user: models.User = Depends(get_current_user),
 ):
     """Partially update a receipt's editable fields, including line items."""
-    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    receipt = _get_owned_or_404(receipt_id, db, current_user, active_only=True)
     update_data = payload.model_dump(exclude_unset=True)
 
     # Replace line items wholesale when provided.
@@ -407,7 +566,7 @@ async def rescan_receipt(
     Updates raw_ocr_text in the DB but does NOT overwrite the user-reviewed
     fields — the caller reviews the new result before deciding to apply it.
     """
-    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    receipt = _get_owned_or_404(receipt_id, db, current_user, active_only=True)
     if not receipt.image_path:
         raise HTTPException(404, "No image for this receipt")
 
@@ -440,13 +599,52 @@ async def rescan_receipt(
 
 
 @router.delete("/{receipt_id}", status_code=204)
-async def delete_receipt(
+def delete_receipt(
     receipt_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    """Soft-delete: move the receipt to the Trash (recoverable). The stored image
+    is kept so a restore can bring it back intact."""
+    receipt = _get_owned_or_404(receipt_id, db, current_user, active_only=True)
+    receipt.deleted_at = datetime.now(timezone.utc)
+    audit_mod.record(db, current_user, "receipt.delete", target_type="receipt",
+                     target_id=receipt_id, detail=receipt.merchant or "—")
+    db.commit()
+
+
+@router.post("/{receipt_id}/restore", response_model=schemas.ReceiptOut)
+def restore_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Bring a trashed receipt back to the active list."""
     receipt = _get_owned_or_404(receipt_id, db, current_user)
+    if receipt.deleted_at is None:
+        raise HTTPException(409, "Receipt is not in the Trash")
+    receipt.deleted_at = None
+    audit_mod.record(db, current_user, "receipt.restore", target_type="receipt",
+                     target_id=receipt_id, detail=receipt.merchant or "—")
+    db.commit()
+    db.refresh(receipt)
+    return receipt
+
+
+@router.delete("/{receipt_id}/permanent", status_code=204)
+async def permanently_delete_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Hard-delete a receipt that's already in the Trash, and remove its stored
+    image from SeaweedFS. Irreversible."""
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    if receipt.deleted_at is None:
+        raise HTTPException(409, "Move the receipt to the Trash before deleting it permanently")
     filer_path = receipt.image_path
+    audit_mod.record(db, current_user, "receipt.purge", target_type="receipt",
+                     target_id=receipt_id, detail=receipt.merchant or "—")
     db.delete(receipt)
     db.commit()
     # Best-effort cleanup of the file in SeaweedFS.

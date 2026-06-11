@@ -133,6 +133,16 @@ npm run dev
 
 Opens at http://localhost:5173. The Vite dev server proxies `/api` to the backend.
 
+#### Progressive Web App & dark mode
+
+The frontend is an installable PWA: a web manifest, generated icons, and a
+service worker (`src/service-worker.js`) that caches the app shell. On phones the
+sidebar collapses to a hamburger drawer and the receipts page offers a
+**"📷 Take photo"** camera capture button. There's a light/dark theme toggle in
+the sidebar (persisted, OS-default aware).
+
+> The service worker is only active in a production build — run `npm run build && npm run preview` to test install/offline behaviour (Chrome DevTools → Application).
+
 ### Running SeaweedFS locally (outside Docker)
 
 If you run the backend outside Docker, point it at a local SeaweedFS filer:

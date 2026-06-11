@@ -1,13 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+
+    <!-- PWA: installable + mobile camera capture -->
+    <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Receipts" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f172a" />
+
+    <!-- Set the dark class before first paint to avoid a flash of light theme. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          var dark = t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
+
     <title>Receipt Scanner</title>
     %sveltekit.head%
   </head>
-  <body data-sveltekit-preload-data="hover">
+  <body data-sveltekit-preload-data="hover" class="bg-slate-50 dark:bg-slate-900">
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>
