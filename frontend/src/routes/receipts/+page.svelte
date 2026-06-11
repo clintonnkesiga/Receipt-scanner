@@ -376,7 +376,7 @@
 
   <!-- Scan review panels -->
   {#each scanQueue.filter((i) => i.status === "done") as item (item.id)}
-    <section class="bg-white rounded-xl shadow-sm p-5 space-y-4 border-l-4 border-blue-400">
+    <section class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5 space-y-4 border-l-4 border-blue-400">
       <div class="flex items-center justify-between">
         <h2 class="font-semibold">Review &amp; correct</h2>
         <span class="text-xs text-slate-400 truncate max-w-xs">{item.file.name}</span>
@@ -472,7 +472,7 @@
   {/each}
 
   <!-- History -->
-  <section class="bg-white rounded-xl shadow-sm p-5">
+  <section class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <h2 class="font-semibold">History ({serverTotal})</h2>
       <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">

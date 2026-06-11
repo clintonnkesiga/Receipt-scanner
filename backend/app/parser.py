@@ -205,9 +205,16 @@ def _find_tax_amount(lines: list[str]) -> Decimal | None:
     return None
 
 
+# Transaction numbers are commonly a 4-digit year, a dash, then digits
+# (e.g. "2026-1550307"). This survives OCR even when the *label* is mangled
+# (we've seen "CashSale" read as "MbashSale"), so it's a reliable fallback key.
+TXN_NUMBER_RE = re.compile(r"\b(20\d{2}-\d{4,})\b")
+
+
 def _find_fiscal_id(text: str) -> str | None:
     """Extract a receipt's unique transaction id (fiscal doc / cash-sale /
     receipt / invoice number, or verification code) for duplicate detection."""
+    # 1) Labeled ids — most authoritative when the label survives OCR.
     for label in FISCAL_LABELS:
         m = re.search(label + r"[:.\s#=-]*([A-Za-z0-9][A-Za-z0-9\-]{5,})", text, re.IGNORECASE)
         if m:
@@ -215,6 +222,10 @@ def _find_fiscal_id(text: str) -> str | None:
             # Require enough alphanumerics to be a real id, not OCR noise.
             if len(re.sub(r"[^A-Za-z0-9]", "", token)) >= 6:
                 return token[:64]
+    # 2) Year-prefixed transaction number anywhere (catches OCR-garbled labels).
+    m = TXN_NUMBER_RE.search(text)
+    if m:
+        return m.group(1).upper()[:64]
     return None
 
 
