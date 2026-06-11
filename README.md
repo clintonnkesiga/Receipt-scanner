@@ -105,6 +105,24 @@ uvicorn app.main:app --reload
 
 Swagger UI: http://localhost:8000/docs
 
+### Backend Tests
+
+The backend tests run against a **real PostgreSQL** spun up on the fly with
+[Testcontainers](https://testcontainers.com/) — the app's schema patches use
+Postgres-only SQL, so SQLite isn't a substitute. A running **Docker daemon** is
+the only prerequisite; the first run pulls the `postgres:16` image.
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+Each test gets a clean database (every table is truncated between tests). Shared
+fixtures — the container, a `TestClient`, and user/login helpers — live in
+[`tests/conftest.py`](backend/tests/conftest.py).
+
 ### Frontend
 
 ```bash

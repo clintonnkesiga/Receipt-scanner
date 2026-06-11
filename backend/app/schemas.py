@@ -90,6 +90,8 @@ class ReceiptUpdate(BaseModel):
     total: Decimal | None = None
     currency: str | None = None
     category: str | None = None
+    rotation: int | None = None
+    line_items: list[LineItemBase] | None = None
 
 
 class ReceiptOut(ReceiptBase):
@@ -99,6 +101,7 @@ class ReceiptOut(ReceiptBase):
     owner_email: str | None = None
     image_path: str | None = None
     raw_ocr_text: str | None = None
+    rotation: int = 0
     created_at: datetime
     line_items: list[LineItemOut] = []
 
@@ -117,6 +120,7 @@ class ScanResult(BaseModel):
     image_path: str
     raw_ocr_text: str
     parsed: ReceiptCreate
+    duplicates: list[ReceiptOut] = []
 
 
 # --- Dashboard stats ---

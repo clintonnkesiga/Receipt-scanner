@@ -53,6 +53,7 @@ def _fit(value: Decimal | None, max_abs: Decimal = _MONEY_MAX) -> Decimal | None
 @router.post("/scan", response_model=schemas.ScanResult)
 async def scan_receipt(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     """Upload an image, run OCR + parsing, return parsed fields for review.
@@ -83,7 +84,31 @@ async def scan_receipt(
     parsed = parse_receipt(raw_text)
     parsed.image_path = filer_path
 
-    return schemas.ScanResult(image_path=filer_path, raw_ocr_text=raw_text, parsed=parsed)
+    # Detect probable duplicates: same owner with matching merchant + date or total.
+    duplicates: list[models.Receipt] = []
+    if parsed.merchant and (parsed.purchase_date or parsed.total is not None):
+        R = models.Receipt
+        conds = [
+            R.owner_id == current_user.id,
+            R.merchant.ilike(parsed.merchant),
+        ]
+        if parsed.purchase_date:
+            conds.append(R.purchase_date == parsed.purchase_date)
+        if parsed.total is not None:
+            conds.append(R.total == parsed.total)
+        duplicates = db.scalars(
+            select(R)
+            .where(*conds)
+            .options(selectinload(R.line_items), selectinload(R.owner))
+            .limit(5)
+        ).all()
+
+    return schemas.ScanResult(
+        image_path=filer_path,
+        raw_ocr_text=raw_text,
+        parsed=parsed,
+        duplicates=list(duplicates),
+    )
 
 
 @router.post("", response_model=schemas.ReceiptOut, status_code=201)
@@ -346,9 +371,22 @@ def update_receipt(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Partially update a receipt's editable fields."""
+    """Partially update a receipt's editable fields, including line items."""
     receipt = _get_owned_or_404(receipt_id, db, current_user)
     update_data = payload.model_dump(exclude_unset=True)
+
+    # Replace line items wholesale when provided.
+    if "line_items" in update_data:
+        receipt.line_items = [
+            models.LineItem(
+                description=li["description"],
+                quantity=_fit(li.get("quantity"), _QTY_MAX),
+                unit_price=_fit(li.get("unit_price")),
+                amount=_fit(li.get("amount")),
+            )
+            for li in update_data.pop("line_items")
+        ]
+
     if "total" in update_data:
         update_data["total"] = _fit(update_data["total"])
     for field, value in update_data.items():
@@ -356,6 +394,49 @@ def update_receipt(
     db.commit()
     db.refresh(receipt)
     return receipt
+
+
+@router.post("/{receipt_id}/rescan", response_model=schemas.ScanResult)
+async def rescan_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Re-fetch the stored image, re-run OCR, and return fresh parsed fields.
+
+    Updates raw_ocr_text in the DB but does NOT overwrite the user-reviewed
+    fields — the caller reviews the new result before deciding to apply it.
+    """
+    receipt = _get_owned_or_404(receipt_id, db, current_user)
+    if not receipt.image_path:
+        raise HTTPException(404, "No image for this receipt")
+
+    try:
+        data, _ = await storage.stream(receipt.image_path)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(404, "Image not found in storage")
+        raise HTTPException(502, "Storage error")
+
+    ext = os.path.splitext(receipt.image_path)[1] or ".jpg"
+    fd, tmp_path = tempfile.mkstemp(suffix=ext)
+    try:
+        os.close(fd)
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+        raw_text = run_ocr(tmp_path)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    receipt.raw_ocr_text = raw_text
+    db.commit()
+
+    parsed = parse_receipt(raw_text)
+    parsed.image_path = receipt.image_path
+    return schemas.ScanResult(image_path=receipt.image_path, raw_ocr_text=raw_text, parsed=parsed)
 
 
 @router.delete("/{receipt_id}", status_code=204)

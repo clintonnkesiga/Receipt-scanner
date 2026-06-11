@@ -2,7 +2,7 @@ from datetime import datetime, date
 from decimal import Decimal
 
 from sqlalchemy import (
-    String, Text, ForeignKey, Numeric, Date, DateTime, Boolean, UniqueConstraint, func,
+    String, Text, ForeignKey, Numeric, Date, DateTime, Boolean, Integer, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,6 +61,7 @@ class Receipt(Base):
     category: Mapped[str | None] = mapped_column(String(32))  # grocery | fuel | other
     image_path: Mapped[str | None] = mapped_column(String(512))
     raw_ocr_text: Mapped[str | None] = mapped_column(Text)
+    rotation: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owner: Mapped["User | None"] = relationship()

@@ -46,6 +46,8 @@ _MIGRATIONS = (
     "CREATE INDEX IF NOT EXISTS ix_categories_owner_id ON categories (owner_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_owner_name "
     "ON categories (owner_id, name)",
+    # Image rotation (0/90/180/270 degrees clockwise).
+    "ALTER TABLE receipts ADD COLUMN IF NOT EXISTS rotation INTEGER NOT NULL DEFAULT 0",
 )
 
 

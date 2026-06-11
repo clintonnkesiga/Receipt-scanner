@@ -307,6 +307,15 @@ export async function updateReceipt(id, patch) {
   return res.json();
 }
 
+export async function rescanReceipt(id) {
+  const res = await request(`${BASE}/${id}/rescan`, { method: "POST" });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail;
+    throw new Error(typeof detail === "string" ? detail : "Rescan failed");
+  }
+  return res.json();
+}
+
 // Export needs the token in a header, so fetch as a blob and trigger download
 // (a plain <a href> can't send the Authorization header).
 export async function downloadCsv() {
