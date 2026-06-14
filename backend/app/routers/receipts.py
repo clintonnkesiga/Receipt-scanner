@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
@@ -121,7 +122,9 @@ async def scan_receipt(
         os.close(fd)
         with open(tmp_path, "wb") as f:
             f.write(contents)
-        raw_text = run_ocr(tmp_path)
+        # OCR is CPU/subprocess-bound; run it off the event loop so it doesn't
+        # block other requests and so concurrent uploads can OCR in parallel.
+        raw_text = await run_in_threadpool(run_ocr, tmp_path)
     finally:
         try:
             os.remove(tmp_path)

@@ -78,6 +78,21 @@ MAX_PDF_PAGES = 10
 
 OCR_CONFIG = "--oem 3 --psm 6"  # assume a single uniform block of text
 
+# Cap the longest side before full OCR. Phone photos are 3000-4000px, but
+# receipt text stays legible at ~2400px and Tesseract runs much faster on
+# fewer pixels (cost scales with area).
+_MAX_OCR_DIM = 2400
+
+
+def _cap_size(img: np.ndarray, max_dim: int = _MAX_OCR_DIM) -> np.ndarray:
+    """Downscale so the longest side is at most `max_dim` (no-op if smaller)."""
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if longest <= max_dim:
+        return img
+    scale = max_dim / longest
+    return cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
 
 def _preprocess_array(img: np.ndarray) -> np.ndarray:
     """Grayscale, upscale, denoise, deskew, threshold a BGR image array."""
@@ -115,14 +130,30 @@ def _write_temp(img: np.ndarray) -> str:
 
 
 def _ocr_path(path: str) -> tuple[str, float]:
-    """OCR an image file; return (text, mean Tesseract confidence 0-100)."""
+    """OCR an image file; return (reconstructed text, mean confidence 0-100).
+
+    Uses a single `image_to_data` call and rebuilds the line text from it,
+    instead of also calling `image_to_string` — that halves the number of
+    (relatively expensive) Tesseract invocations per image.
+    """
     data = pytesseract.image_to_data(path, config=OCR_CONFIG, output_type=Output.DICT)
-    confs = [
-        float(c)
-        for c, t in zip(data["conf"], data["text"])
-        if t.strip() and float(c) >= 0
-    ]
-    text = pytesseract.image_to_string(path, config=OCR_CONFIG)
+    n = len(data["text"])
+    confs: list[float] = []
+    lines: dict[tuple, list[str]] = {}
+    order: list[tuple] = []
+    for i in range(n):
+        word = data["text"][i]
+        if not word.strip():
+            continue
+        c = float(data["conf"][i])
+        if c >= 0:
+            confs.append(c)
+        key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+        if key not in lines:
+            lines[key] = []
+            order.append(key)
+        lines[key].append(word)
+    text = "\n".join(" ".join(lines[k]) for k in order)
     return text, (sum(confs) / len(confs) if confs else -1.0)
 
 
@@ -169,6 +200,9 @@ def run_ocr(file_path: str) -> str:
     angle = _best_orientation(img)
     if angle:
         img = _rotate(img, angle)
+
+    # Cap resolution so full-size recognition isn't needlessly slow.
+    img = _cap_size(img)
 
     # Photos of thermal receipts OCR better after preprocessing; clean digital
     # scans OCR better raw. Run both on the oriented image and keep whichever

@@ -172,13 +172,23 @@
       error: null,
     }));
     scanQueue.push(...newItems);
-    // Drive the *proxied* queue entries (look up by id), not the raw `newItems`
-    // objects — mutating the originals wouldn't trigger Svelte reactivity, so
-    // the progress bar would stay frozen at 0%.
-    for (const { id } of newItems) {
-      const item = scanQueue.find((i) => i.id === id);
-      if (item) await processScanItem(item);
-    }
+    // Process the batch with bounded concurrency so several receipts OCR in
+    // parallel (the backend runs OCR off-thread) instead of strictly one at a
+    // time. Drive the *proxied* queue entries (look up by id) so mutations
+    // trigger Svelte reactivity — otherwise the progress bars stay frozen.
+    const ids = newItems.map((i) => i.id);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        const item = scanQueue.find((i) => i.id === id);
+        if (item) await processScanItem(item);
+      }
+    };
+    const SCAN_CONCURRENCY = 3;
+    await Promise.all(
+      Array.from({ length: Math.min(SCAN_CONCURRENCY, ids.length) }, worker),
+    );
   }
 
   async function saveScanItem(item) {
