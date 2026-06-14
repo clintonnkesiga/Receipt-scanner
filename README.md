@@ -105,6 +105,24 @@ uvicorn app.main:app --reload
 
 Swagger UI: http://localhost:8000/docs
 
+### Backend Tests
+
+The backend tests run against a **real PostgreSQL** spun up on the fly with
+[Testcontainers](https://testcontainers.com/) — the app's schema patches use
+Postgres-only SQL, so SQLite isn't a substitute. A running **Docker daemon** is
+the only prerequisite; the first run pulls the `postgres:16` image.
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+Each test gets a clean database (every table is truncated between tests). Shared
+fixtures — the container, a `TestClient`, and user/login helpers — live in
+[`tests/conftest.py`](backend/tests/conftest.py).
+
 ### Frontend
 
 ```bash
@@ -114,6 +132,16 @@ npm run dev
 ```
 
 Opens at http://localhost:5173. The Vite dev server proxies `/api` to the backend.
+
+#### Progressive Web App & dark mode
+
+The frontend is an installable PWA: a web manifest, generated icons, and a
+service worker (`src/service-worker.js`) that caches the app shell. On phones the
+sidebar collapses to a hamburger drawer and the receipts page offers a
+**"📷 Take photo"** camera capture button. There's a light/dark theme toggle in
+the sidebar (persisted, OS-default aware).
+
+> The service worker is only active in a production build — run `npm run build && npm run preview` to test install/offline behaviour (Chrome DevTools → Application).
 
 ### Running SeaweedFS locally (outside Docker)
 

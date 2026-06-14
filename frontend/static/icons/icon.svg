@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#2563eb"/>
+  <!-- Receipt body with a torn zig-zag bottom edge -->
+  <path d="M166,156 Q166,140 182,140 L330,140 Q346,140 346,156 L346,372
+           L316,358 L286,372 L256,358 L226,372 L196,358 L166,372 Z"
+        fill="#ffffff"/>
+  <!-- Text lines -->
+  <g stroke-linecap="round">
+    <line x1="196" y1="186" x2="316" y2="186" stroke="#cbd5e1" stroke-width="13"/>
+    <line x1="196" y1="226" x2="300" y2="226" stroke="#e2e8f0" stroke-width="13"/>
+    <line x1="196" y1="266" x2="316" y2="266" stroke="#e2e8f0" stroke-width="13"/>
+    <!-- Total line, brand-colored -->
+    <line x1="196" y1="312" x2="276" y2="312" stroke="#2563eb" stroke-width="15"/>
+  </g>
+</svg>

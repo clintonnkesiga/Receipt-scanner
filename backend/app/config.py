@@ -28,5 +28,14 @@ class Settings(BaseSettings):
     superadmin_password: str = "changeme"
     superadmin_name: str = "Super Admin"
 
+    # --- Email (weekly digest). Sending is a no-op until smtp_host is set. ---
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "Receipt Scanner <no-reply@receiptscanner.local>"
+    smtp_use_tls: bool = True  # STARTTLS
+    app_base_url: str = "http://localhost:5173"  # used for links in emails
+
 
 settings = Settings()

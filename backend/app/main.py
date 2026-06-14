@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import receipts, auth, users, categories
+from .routers import receipts, auth, users, categories, budgets, reports, twofa, audit_log
 from .seed import seed_default_categories
 
 
@@ -30,6 +30,10 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(categories.router)
 app.include_router(receipts.router)
+app.include_router(budgets.router)
+app.include_router(reports.router)
+app.include_router(twofa.router)
+app.include_router(audit_log.router)
 
 
 @app.get("/health")

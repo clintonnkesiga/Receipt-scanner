@@ -34,7 +34,7 @@
 
   onMount(async () => {
     if ($currentUser?.role !== "superadmin") {
-      goto("/");
+      goto("/receipts");
       return;
     }
     await refresh();
@@ -122,7 +122,7 @@
   }
 </script>
 
-<div class="w-full px-6 py-8 space-y-6">
+<div class="w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
   <h1 class="text-2xl font-semibold">User management</h1>
 
   <!-- Create user -->
@@ -184,7 +184,8 @@
   <!-- User list -->
   <section class="bg-white rounded-xl shadow-sm p-5">
     <h2 class="font-semibold mb-3">Users ({users.length})</h2>
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[600px]">
       <thead class="text-left text-slate-500 border-b">
         <tr>
           <th class="py-2">Email</th>
@@ -279,5 +280,6 @@
         {/each}
       </tbody>
     </table>
+    </div>
   </section>
 </div>

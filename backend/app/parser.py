@@ -22,6 +22,20 @@ TOTAL_KEYWORDS = ("grand total", "total due", "amount due", "total", "balance")
 NON_TOTAL_HINTS = ("subtotal", "sub total", "tendered", "tender", "change",
                    "cash", "card", "tax", "vat", "balance due")
 
+# Keywords that flag a tax / VAT line.
+TAX_KEYWORDS = ("vat", "tax", "gst", "hst", "pst", "tva", "mwst", "iva")
+
+# Labels (in priority order) that precede a receipt's unique transaction id.
+# Used for reliable duplicate detection — far more stable than date/total.
+FISCAL_LABELS = (
+    r"fiscal\s*doc(?:ument)?\s*(?:no|number|#)?",
+    r"\bfdn\b",
+    r"cash\s*sale\s*(?:no|number|#)?",
+    r"receipt\s*(?:no|number|#)",
+    r"invoice\s*(?:no|number|#)",
+    r"verification\s*code",
+)
+
 # Grab a full number run including thousands/decimal separators, e.g.
 # "150,450", "1,234.56", "12.50", "127500". _to_decimal() then disambiguates
 # whether a separator is a thousands marker or a decimal point.
@@ -178,6 +192,43 @@ def _categorize(text: str) -> str:
     return "other"
 
 
+def _find_tax_amount(lines: list[str]) -> Decimal | None:
+    """Return the first money value on a line that contains a tax/VAT keyword."""
+    for line in lines:
+        low = line.lower()
+        if any(k in low for k in TAX_KEYWORDS):
+            amounts = _money_tokens(line)
+            if amounts:
+                val = _to_decimal(amounts[-1])
+                if val is not None:
+                    return val
+    return None
+
+
+# Transaction numbers are commonly a 4-digit year, a dash, then digits
+# (e.g. "2026-1550307"). This survives OCR even when the *label* is mangled
+# (we've seen "CashSale" read as "MbashSale"), so it's a reliable fallback key.
+TXN_NUMBER_RE = re.compile(r"\b(20\d{2}-\d{4,})\b")
+
+
+def _find_fiscal_id(text: str) -> str | None:
+    """Extract a receipt's unique transaction id (fiscal doc / cash-sale /
+    receipt / invoice number, or verification code) for duplicate detection."""
+    # 1) Labeled ids — most authoritative when the label survives OCR.
+    for label in FISCAL_LABELS:
+        m = re.search(label + r"[:.\s#=-]*([A-Za-z0-9][A-Za-z0-9\-]{5,})", text, re.IGNORECASE)
+        if m:
+            token = m.group(1).upper().strip("-")
+            # Require enough alphanumerics to be a real id, not OCR noise.
+            if len(re.sub(r"[^A-Za-z0-9]", "", token)) >= 6:
+                return token[:64]
+    # 2) Year-prefixed transaction number anywhere (catches OCR-garbled labels).
+    m = TXN_NUMBER_RE.search(text)
+    if m:
+        return m.group(1).upper()[:64]
+    return None
+
+
 def _find_line_items(lines: list[str]) -> list[LineItemBase]:
     """Grab 'description .... amount' style rows, skipping total/subtotal lines."""
     items: list[LineItemBase] = []
@@ -198,12 +249,18 @@ def _find_line_items(lines: list[str]) -> list[LineItemBase]:
 
 def parse_receipt(raw_text: str) -> ReceiptCreate:
     lines = [l for l in raw_text.splitlines() if l.strip()]
+    total = _find_total(lines)
+    tax_amount = _find_tax_amount(lines)
+    net_amount = (total - tax_amount) if (total is not None and tax_amount is not None) else None
     return ReceiptCreate(
         merchant=_find_merchant(lines),
         purchase_date=_find_date(raw_text),
-        total=_find_total(lines),
+        total=total,
         currency=_find_currency(raw_text),
         category=_categorize(raw_text),
         raw_ocr_text=raw_text,
         line_items=_find_line_items(lines),
+        tax_amount=tax_amount,
+        net_amount=net_amount,
+        fiscal_id=_find_fiscal_id(raw_text),
     )

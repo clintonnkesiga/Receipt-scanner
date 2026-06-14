@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Dark mode remap ───────────────────────────────────────────────────────
+   The UI is built with light-palette Tailwind utilities (bg-white cards, slate
+   borders/text, etc.). Instead of hand-annotating every element with `dark:`
+   variants, these rules remap the common light tokens whenever the <html>
+   `dark` class is set (see src/lib/theme.js + the no-flash init in app.html).
+
+   Class selectors match the exact token, so `.bg-white` does NOT touch
+   `bg-white/90`. Explicit `dark:` variants in markup share the same values and
+   simply agree with these. */
+.dark .bg-white  { background-color: rgb(30 41 59); }   /* slate-800 surfaces  */
+.dark .bg-slate-50  { background-color: rgb(15 23 42); } /* slate-900 panels    */
+.dark .bg-slate-100 { background-color: rgb(51 65 85); } /* slate-700 tracks    */
+
+.dark .hover\:bg-slate-50:hover  { background-color: rgb(51 65 85); } /* slate-700 */
+.dark .hover\:bg-slate-100:hover { background-color: rgb(51 65 85); }
+
+.dark .border-slate-100 { border-color: rgb(51 65 85); }  /* slate-700 */
+.dark .border-slate-200 { border-color: rgb(51 65 85); }
+.dark .border-slate-300 { border-color: rgb(71 85 105); } /* slate-600 */
+
+/* Body text tokens → light shades on dark surfaces. */
+.dark .text-slate-900 { color: rgb(241 245 249); } /* slate-100 */
+.dark .text-slate-800 { color: rgb(226 232 240); } /* slate-200 */
+.dark .text-slate-700 { color: rgb(203 213 225); } /* slate-300 */
+.dark .text-slate-600 { color: rgb(203 213 225); } /* slate-300 */
+.dark .text-slate-500 { color: rgb(148 163 184); } /* slate-400 */
+
+/* Form controls default to white; make them fit dark cards. */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark select,
+.dark textarea {
+  background-color: rgb(15 23 42); /* slate-900 */
+  border-color: rgb(71 85 105);    /* slate-600 */
+  color: rgb(241 245 249);         /* slate-100 */
+}

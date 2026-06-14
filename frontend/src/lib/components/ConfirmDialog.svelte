@@ -37,19 +37,19 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
-      class="w-full max-w-sm bg-white rounded-xl shadow-2xl p-5 space-y-4"
+      class="w-full max-w-sm bg-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl p-5 space-y-4"
       onclick={(e) => e.stopPropagation()}
     >
-      <h2 id="confirm-title" class="font-semibold text-slate-900">{title}</h2>
+      <h2 id="confirm-title" class="font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       {#if message}
-        <p class="text-sm text-slate-600">{message}</p>
+        <p class="text-sm text-slate-600 dark:text-slate-300">{message}</p>
       {/if}
       <div class="flex justify-end gap-3 pt-1">
         <button
           type="button"
           onclick={cancel}
           disabled={busy}
-          class="px-4 py-2 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
+          class="px-4 py-2 rounded-lg border dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
         >
           {cancelLabel}
         </button>

@@ -1,0 +1,11 @@
+# Test-only dependencies.
+#
+# Install into the backend venv:
+#   .venv/bin/pip install -r requirements-dev.txt
+#
+# Requires a running Docker daemon — Testcontainers spins up a real
+# PostgreSQL 16 container for the integration tests (see tests/conftest.py).
+-r requirements.txt
+
+pytest>=8.3,<9
+testcontainers[postgres]>=4.8,<5

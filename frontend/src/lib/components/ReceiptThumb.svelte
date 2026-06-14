@@ -55,16 +55,18 @@
 </script>
 
 <div
-  class="group relative bg-white rounded-xl border border-slate-200 overflow-hidden
+  class="group relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden
          hover:shadow-md transition focus-within:ring-2 focus-within:ring-blue-400"
 >
+  <!-- Image opens the lightbox; the caption below deep-links to the detail page. -->
   <button
     type="button"
     onclick={() => onopen?.(receipt)}
+    aria-label="Open image"
     class="block w-full text-left focus:outline-none"
   >
     <div
-      class="aspect-square bg-slate-100 flex items-center justify-center overflow-hidden"
+      class="aspect-square bg-slate-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden"
     >
       {#if loading}
         <div class="text-slate-300 text-[10px] animate-pulse">Loading…</div>
@@ -83,19 +85,19 @@
         </div>
       {/if}
     </div>
-    <div class="p-2">
-      <div class="font-medium text-xs truncate">{receipt.merchant || "—"}</div>
-      {#if showOwner}
-        <div class="text-[10px] text-slate-400 truncate">
-          {receipt.owner_email || "—"}
-        </div>
-      {/if}
-      <div class="text-[10px] text-slate-500">
-        {receipt.purchase_date || "—"}
-      </div>
-      <div class="text-xs font-semibold tabular-nums">{fmtTotal}</div>
-    </div>
   </button>
+  <a href={`/receipts/${receipt.id}`} class="block p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
+    <div class="font-medium text-xs truncate text-slate-800 dark:text-slate-100 hover:underline">{receipt.merchant || "—"}</div>
+    {#if showOwner}
+      <div class="text-[10px] text-slate-400 truncate">
+        {receipt.owner_email || "—"}
+      </div>
+    {/if}
+    <div class="text-[10px] text-slate-500 dark:text-slate-400">
+      {receipt.purchase_date || "—"}
+    </div>
+    <div class="text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100">{fmtTotal}</div>
+  </a>
 
   {#if onedit}
     <button
