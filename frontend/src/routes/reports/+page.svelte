@@ -9,6 +9,7 @@
     downloadExport,
   } from "$lib/api";
   import { toasts } from "$lib/toast.js";
+  import { money } from "$lib/format.js";
 
   // Filters
   let granularity = $state("month"); // day | week | month
@@ -163,7 +164,7 @@
     <div class="flex items-baseline justify-between mb-4">
       <h2 class="font-semibold">Spend over time</h2>
       {#if series}
-        <span class="text-sm text-slate-500">Total {fmt(series.total)}</span>
+        <span class="text-sm text-slate-500">Total {money(series.total)}</span>
       {/if}
     </div>
 
@@ -183,7 +184,7 @@
         <!-- Points -->
         {#each chart.coords as c}
           <circle cx={c.cx} cy={c.cy} r="3.5" fill="#2563eb">
-            <title>{c.period}: {fmt(c.total)} ({c.count})</title>
+            <title>{c.period}: {money(c.total)} ({c.count})</title>
           </circle>
         {/each}
         <!-- X labels -->
@@ -220,7 +221,7 @@
             <tr class="border-b last:border-0">
               <td class="py-2 font-medium">{r.merchant}</td>
               <td class="capitalize text-slate-500">{r.category || "—"}</td>
-              <td class="text-right tabular-nums">{fmt(r.avg_amount)}</td>
+              <td class="text-right tabular-nums">{money(r.avg_amount)}</td>
               <td class="text-right text-slate-500">~{Math.round(r.avg_interval_days)}d</td>
               <td class="text-right">{r.occurrences}</td>
               <td class="text-right text-slate-500">{fmtDate(r.next_estimated)}</td>

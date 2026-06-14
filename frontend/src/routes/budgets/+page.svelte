@@ -54,7 +54,7 @@
   // ── Create form ──────────────────────────────────────────────────────────────
   let showCreate = $state(false);
   let creating = $state(false);
-  let newBudget = $state({ category: "", monthly_limit: "", currency: "" });
+  let newBudget = $state({ category: "", monthly_limit: "", currency: "UGX" });
 
   async function onCreateSave() {
     if (!newBudget.monthly_limit || Number(newBudget.monthly_limit) <= 0) {
@@ -68,7 +68,7 @@
         monthly_limit: Number(newBudget.monthly_limit),
         currency: newBudget.currency || null,
       });
-      newBudget = { category: "", monthly_limit: "", currency: "" };
+      newBudget = { category: "", monthly_limit: "", currency: "UGX" };
       showCreate = false;
       await load();
       toasts.success("Budget created");
@@ -88,7 +88,7 @@
     editId = b.id;
     editDraft = {
       monthly_limit: String(b.monthly_limit),
-      currency: b.currency ?? "",
+      currency: b.currency ?? "UGX",
     };
   }
 
@@ -216,14 +216,14 @@
         </label>
         <label class="text-sm">
           <span class="font-medium block mb-1">Currency</span>
-          <input bind:value={newBudget.currency} placeholder="e.g. USD" maxlength="8" class="w-full rounded-lg border border-slate-300 p-2" />
+          <input bind:value={newBudget.currency} placeholder="UGX" maxlength="8" class="w-full rounded-lg border border-slate-300 p-2" />
         </label>
       </div>
       <div class="flex gap-3 mt-4">
         <button type="button" onclick={onCreateSave} disabled={creating} class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
           {creating ? "Saving…" : "Save budget"}
         </button>
-        <button type="button" onclick={() => { showCreate = false; newBudget = { category: "", monthly_limit: "", currency: "" }; }} class="px-4 py-2 rounded-lg border text-sm hover:bg-slate-50">Cancel</button>
+        <button type="button" onclick={() => { showCreate = false; newBudget = { category: "", monthly_limit: "", currency: "UGX" }; }} class="px-4 py-2 rounded-lg border text-sm hover:bg-slate-50">Cancel</button>
       </div>
     </section>
   {/if}
@@ -254,7 +254,7 @@
               </label>
               <label class="text-sm">
                 <span class="font-medium block mb-1">Currency</span>
-                <input bind:value={editDraft.currency} maxlength="8" placeholder="e.g. USD" class="rounded-lg border border-slate-300 p-1.5 w-24" />
+                <input bind:value={editDraft.currency} maxlength="8" placeholder="UGX" class="rounded-lg border border-slate-300 p-1.5 w-24" />
               </label>
               <div class="flex gap-2 pb-0.5">
                 <button type="button" onclick={onEditSave} disabled={editSaving} class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">

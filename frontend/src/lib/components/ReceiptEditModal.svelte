@@ -8,7 +8,7 @@
 
   function blankDraft() {
     return {
-      merchant: "", purchase_date: "", total: "", currency: "", category: "",
+      merchant: "", purchase_date: "", total: "", currency: "UGX", category: "",
       tax_amount: "", net_amount: "", fx_rate: "", line_items: [],
     };
   }
@@ -29,7 +29,7 @@
           merchant:      receipt.merchant      ?? "",
           purchase_date: receipt.purchase_date ?? "",
           total:         receipt.total      != null ? String(receipt.total)      : "",
-          currency:      receipt.currency      ?? "",
+          currency:      receipt.currency      ?? "UGX",
           category:      receipt.category      ?? "",
           tax_amount:    receipt.tax_amount != null ? String(receipt.tax_amount) : "",
           net_amount:    receipt.net_amount != null ? String(receipt.net_amount) : "",
@@ -140,7 +140,7 @@
             <input type="number" step="0.01" bind:value={editDraft.total} class="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 p-2" placeholder="0.00" />
           </label>
           <label class="text-sm"><span class="font-medium block mb-1">Currency</span>
-            <input bind:value={editDraft.currency} class="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 p-2" placeholder="e.g. USD" maxlength="8" />
+            <input bind:value={editDraft.currency} class="w-full rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-900 p-2" placeholder="UGX" maxlength="8" />
           </label>
         </div>
         <div class="grid grid-cols-2 gap-3">

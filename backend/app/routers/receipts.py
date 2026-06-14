@@ -5,8 +5,10 @@ import tempfile
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import hashlib
+
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, func
@@ -182,7 +184,7 @@ def create_receipt(
         merchant=payload.merchant,
         purchase_date=payload.purchase_date,
         total=_fit(payload.total),
-        currency=payload.currency,
+        currency=payload.currency or "UGX",  # default so users needn't type it
         category=payload.category,
         image_path=payload.image_path,
         raw_ocr_text=payload.raw_ocr_text,
@@ -510,20 +512,33 @@ def get_receipt(
 @router.get("/{receipt_id}/image")
 async def get_receipt_image(
     receipt_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Serve the stored receipt image to its owner (or an admin)."""
+    """Serve the stored receipt image to its owner (or an admin).
+
+    Image bytes are immutable per receipt (rotation is applied client-side), so
+    we send a long-lived private cache header + ETag. Browsers then serve repeat
+    loads from cache and revalidate cheaply with a 304, instead of re-downloading
+    on every page change / re-render.
+    """
     receipt = _get_owned_or_404(receipt_id, db, current_user)  # trashed images still viewable
     if not receipt.image_path:
         raise HTTPException(404, "No image for this receipt")
+
+    etag = '"' + hashlib.md5(receipt.image_path.encode()).hexdigest() + '"'
+    cache_headers = {"Cache-Control": "private, max-age=2592000", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=cache_headers)
+
     try:
         data, content_type = await storage.stream(receipt.image_path)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             raise HTTPException(404, "No image for this receipt")
         raise HTTPException(502, "Storage error")
-    return Response(content=data, media_type=content_type)
+    return Response(content=data, media_type=content_type, headers=cache_headers)
 
 
 @router.patch("/{receipt_id}", response_model=schemas.ReceiptOut)

@@ -13,10 +13,11 @@
     !!receipt.image_path && receipt.image_path.toLowerCase().endsWith(".pdf"),
   );
 
-  // Re-runs if the receipt changes; cleanup revokes the previous object URL.
+  // Re-runs if the receipt changes. URLs come from a shared LRU cache (see
+  // api.getReceiptImageUrl), so cached images resolve instantly and we never
+  // revoke here — the cache owns the object URL's lifetime.
   $effect(() => {
     let active = true;
-    let objectUrl = null;
     loading = true;
     failed = false;
     url = null;
@@ -24,12 +25,7 @@
     if (receipt.image_path && !isPdf) {
       getReceiptImageUrl(receipt.id)
         .then((u) => {
-          if (!active) {
-            URL.revokeObjectURL(u);
-            return;
-          }
-          objectUrl = u;
-          url = u;
+          if (active) url = u;
         })
         .catch(() => {
           if (active) failed = true;
@@ -43,7 +39,6 @@
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   });
 
