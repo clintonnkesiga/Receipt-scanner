@@ -267,11 +267,12 @@
     const token = ++viewerToken;
     viewerIndex = index;
     viewerIsPdf = isPdfPath(receipt.image_path);
-    if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; }
+    // URLs come from the shared image cache — never revoke them here.
+    viewerUrl = null;
     viewerLoading = true;
     try {
       const url = await getReceiptImageUrl(receipt.id);
-      if (token !== viewerToken) { URL.revokeObjectURL(url); return; }
+      if (token !== viewerToken) return;
       viewerUrl = url;
     } catch (err) {
       if (token === viewerToken)
@@ -287,7 +288,6 @@
 
   function closeViewer() {
     viewerToken++;
-    if (viewerUrl) URL.revokeObjectURL(viewerUrl);
     viewerUrl = null;
     viewerIndex = -1;
   }

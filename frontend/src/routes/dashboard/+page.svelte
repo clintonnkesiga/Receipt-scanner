@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import { getStats } from "$lib/api";
+  import { money } from "$lib/format.js";
 
   let stats = $state(/** @type {any} */ (null));
   let error = $state("");
@@ -75,7 +76,7 @@
             <span class="text-lg">💰</span>
           </div>
           <div class="text-2xl font-semibold mt-1 text-blue-900">
-            {fmt(stats.total_spend)}
+            {money(stats.total_spend)}
           </div>
           {#if multiCurrency}
             <div class="text-xs text-amber-600 mt-1">
@@ -102,7 +103,7 @@
             <span class="text-lg">📊</span>
           </div>
           <div class="text-2xl font-semibold mt-1 text-violet-900">
-            {fmt(Number(stats.total_spend) / stats.receipt_count)}
+            {money(Number(stats.total_spend) / stats.receipt_count)}
           </div>
         </div>
       </section>
@@ -115,7 +116,7 @@
             <span class="text-lg">📅</span>
           </div>
           <div class="text-2xl font-semibold mt-1 text-amber-900">
-            {fmt(trend?.current)}
+            {money(trend?.current)}
           </div>
           {#if trend && trend.change_pct != null}
             <div
@@ -173,8 +174,7 @@
               >
             </div>
             <div class="text-xl font-semibold">
-              {lr.currency || ""}
-              {fmt(lr.total)}
+              {money(lr.total, lr.currency)}
             </div>
           </div>
         </section>
@@ -212,7 +212,7 @@
                     {#if over}<span class="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Over</span>{/if}
                   </span>
                   <span class="{over ? 'text-red-600 font-semibold' : 'text-slate-600'}">
-                    {fmt(u.spent)} / {fmt(u.budget.monthly_limit)}
+                    {money(u.spent, u.budget.currency)} / {money(u.budget.monthly_limit, u.budget.currency)}
                     <span class="text-xs text-slate-400">({pct.toFixed(0)}%)</span>
                   </span>
                 </div>
@@ -241,7 +241,7 @@
                   <span class="capitalize">{c.category || "uncategorized"}</span
                   >
                   <span class="text-slate-600"
-                    >{fmt(c.total)}
+                    >{money(c.total)}
                     <span class="text-xs text-slate-400">({c.count})</span
                     ></span
                   >
@@ -267,7 +267,7 @@
                   <div class="flex justify-between text-sm mb-1">
                     <span class="truncate pr-2">{m.merchant || "—"}</span>
                     <span class="text-slate-600 whitespace-nowrap"
-                      >{fmt(m.total)}
+                      >{money(m.total)}
                       <span class="text-xs text-slate-400">({m.count})</span
                       ></span
                     >

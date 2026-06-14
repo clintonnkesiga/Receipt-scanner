@@ -390,13 +390,48 @@ export async function getReceipt(id) {
   return res.json();
 }
 
-// Fetch a receipt's image (auth-protected) and return an object URL.
-// Caller is responsible for URL.revokeObjectURL when done.
-export async function getReceiptImageUrl(id) {
-  const res = await request(`${BASE}/${id}/image`);
-  if (!res.ok) throw new Error("Could not load image");
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+// Auth-protected receipt images can't use a plain <img src> (no Authorization
+// header), so we fetch them as blobs and hand back object URLs. To stop every
+// re-render / page change from re-downloading, we keep a session-wide LRU cache
+// keyed by receipt id (image bytes are immutable per id — rotation is applied
+// in CSS). The cache OWNS the object URLs; callers must NOT revoke them.
+const _imgCache = new Map(); // id -> Promise<objectURL>  (insertion order = LRU)
+const _IMG_CACHE_MAX = 200;
+
+export function getReceiptImageUrl(id) {
+  const hit = _imgCache.get(id);
+  if (hit) {
+    _imgCache.delete(id); // bump to most-recently-used
+    _imgCache.set(id, hit);
+    return hit;
+  }
+  const promise = (async () => {
+    const res = await request(`${BASE}/${id}/image`);
+    if (!res.ok) {
+      _imgCache.delete(id); // don't cache failures — allow retry
+      throw new Error("Could not load image");
+    }
+    return URL.createObjectURL(await res.blob());
+  })();
+  _imgCache.set(id, promise);
+
+  // Evict the oldest entry once over capacity, revoking its URL.
+  if (_imgCache.size > _IMG_CACHE_MAX) {
+    const oldest = _imgCache.keys().next().value;
+    const evicted = _imgCache.get(oldest);
+    _imgCache.delete(oldest);
+    evicted?.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+  }
+  return promise;
+}
+
+// Drop a cached image (e.g. after delete) and free its object URL.
+export function invalidateReceiptImage(id) {
+  const hit = _imgCache.get(id);
+  if (hit) {
+    _imgCache.delete(id);
+    hit.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+  }
 }
 
 // Soft-delete: moves the receipt to the Trash (recoverable via restoreReceipt).

@@ -35,7 +35,6 @@
   $effect(() => {
     const rid = id;
     let active = true;
-    let objectUrl = null;
     loading = true;
     loadError = "";
     receipt = null;
@@ -48,10 +47,9 @@
         imageIsPdf = !!r.image_path && r.image_path.toLowerCase().endsWith(".pdf");
         if (r.image_path && !imageIsPdf) {
           try {
+            // Shared cache owns the URL — don't revoke it here.
             const u = await getReceiptImageUrl(r.id);
-            if (!active) { URL.revokeObjectURL(u); return; }
-            objectUrl = u;
-            imageUrl = u;
+            if (active) imageUrl = u;
           } catch {
             /* image is optional on the detail page */
           }
@@ -66,7 +64,6 @@
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   });
 

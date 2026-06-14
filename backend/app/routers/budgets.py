@@ -50,7 +50,7 @@ def create_budget(
         owner_id=current_user.id,
         category=payload.category,
         monthly_limit=payload.monthly_limit,
-        currency=payload.currency,
+        currency=payload.currency or "UGX",  # default so users needn't type it
     )
     db.add(b)
     audit.record(db, current_user, "budget.create", target_type="budget",
