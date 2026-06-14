@@ -214,6 +214,9 @@ TXN_NUMBER_RE = re.compile(r"\b(20\d{2}-\d{4,})\b")
 def _find_fiscal_id(text: str) -> str | None:
     """Extract a receipt's unique transaction id (fiscal doc / cash-sale /
     receipt / invoice number, or verification code) for duplicate detection."""
+    # OCR sometimes reads the hyphen in "2026-1550307" as an en/em dash; fold
+    # them to a plain hyphen so the patterns below match.
+    text = re.sub(r"[‒–—―−]", "-", text)
     # 1) Labeled ids — most authoritative when the label survives OCR.
     for label in FISCAL_LABELS:
         m = re.search(label + r"[:.\s#=-]*([A-Za-z0-9][A-Za-z0-9\-]{5,})", text, re.IGNORECASE)
