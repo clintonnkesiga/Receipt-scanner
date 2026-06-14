@@ -75,7 +75,12 @@
     view === "gallery" ? grouped.flatMap(([, items]) => items) : receipts,
   );
 
+  // Sequence guard: only the latest in-flight request is allowed to render,
+  // so fast page clicks / filter edits can't land out of order.
+  let _reqSeq = 0;
+
   async function refresh() {
+    const seq = ++_reqSeq;
     try {
       const data = await listReceipts({
         q: search,
@@ -88,24 +93,50 @@
         amount_min: amountMin,
         amount_max: amountMax,
       });
+      if (seq !== _reqSeq) return; // superseded by a newer request
+      // Clamp: if the current page is now past the end (e.g. after a delete or
+      // a narrower filter), step back to the last real page and refetch.
+      const lastPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+      if (page > lastPage) {
+        page = lastPage;
+        return refresh();
+      }
       receipts = data.items;
       serverTotal = data.total;
       serverTotalSum = data.total_sum;
       serverNormalizedSum = data.normalized_sum ?? null;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : "Could not load receipts");
+      if (seq === _reqSeq)
+        toasts.error(e instanceof Error ? e.message : "Could not load receipts");
     }
   }
 
+  // Immediate filter apply (selects, date pickers, clear button).
   function applyFilter(updater) {
     updater();
     page = 1;
     refresh();
   }
 
+  // Debounced apply for free-text/number inputs so we don't fire a request per
+  // keystroke.
+  let _filterTimer;
+  function applyFilterDebounced(updater, delay = 350) {
+    updater();
+    page = 1;
+    clearTimeout(_filterTimer);
+    _filterTimer = setTimeout(refresh, delay);
+  }
+
   function goToPage(p) {
+    if (p < 1 || p > pageCount || p === page) return;
     page = p;
     refresh();
+    // Bring the list back into view — otherwise the page swaps above the fold
+    // and it looks like nothing happened.
+    document
+      .getElementById("receipt-history")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   onMount(async () => {
@@ -482,7 +513,7 @@
   {/each}
 
   <!-- History -->
-  <section class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
+  <section id="receipt-history" class="bg-white dark:bg-slate-800 rounded-xl shadow-sm p-5">
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <h2 class="font-semibold">History ({serverTotal})</h2>
       <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
@@ -497,7 +528,7 @@
         type="search"
         placeholder="Search merchant…"
         value={search}
-        oninput={(e) => applyFilter(() => (search = e.currentTarget.value))}
+        oninput={(e) => applyFilterDebounced(() => (search = e.currentTarget.value))}
         class="rounded-lg border border-slate-300 p-1.5 text-sm w-40"
       />
       <label class="text-sm text-slate-500 flex items-center gap-1">
@@ -528,11 +559,11 @@
       <!-- Amount range -->
       <label class="text-sm text-slate-500 flex items-center gap-1">
         Min
-        <input type="number" step="0.01" placeholder="0" value={amountMin} oninput={(e) => applyFilter(() => (amountMin = e.currentTarget.value))} class="rounded-lg border border-slate-300 p-1.5 text-sm w-24" />
+        <input type="number" step="0.01" placeholder="0" value={amountMin} oninput={(e) => applyFilterDebounced(() => (amountMin = e.currentTarget.value))} class="rounded-lg border border-slate-300 p-1.5 text-sm w-24" />
       </label>
       <label class="text-sm text-slate-500 flex items-center gap-1">
         Max
-        <input type="number" step="0.01" placeholder="∞" value={amountMax} oninput={(e) => applyFilter(() => (amountMax = e.currentTarget.value))} class="rounded-lg border border-slate-300 p-1.5 text-sm w-24" />
+        <input type="number" step="0.01" placeholder="∞" value={amountMax} oninput={(e) => applyFilterDebounced(() => (amountMax = e.currentTarget.value))} class="rounded-lg border border-slate-300 p-1.5 text-sm w-24" />
       </label>
       {#if dateFrom || dateTo || amountMin || amountMax || search || filter}
         <button type="button" onclick={() => applyFilter(() => { search=""; filter=""; dateFrom=""; dateTo=""; amountMin=""; amountMax=""; })} class="text-xs text-slate-400 hover:text-slate-700 underline">Clear filters</button>
