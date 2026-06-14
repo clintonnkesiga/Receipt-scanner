@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Commuza-inspired theme polish ─────────────────────────────────────────
+   Brand colour (#3C5DAA) and Poppins are wired up in tailwind.config.js +
+   app.html. These touches complete the look without editing every page. */
+@layer base {
+  body {
+    font-family: theme("fontFamily.sans");
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Tighter tracking on headings reads more like Commuza's display type. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Cards (rounded-xl) get a slightly more generous radius, Commuza-style. */
+.rounded-xl {
+  border-radius: 1rem;
+}
+
 /* ── Dark mode remap ───────────────────────────────────────────────────────
    The UI is built with light-palette Tailwind utilities (bg-white cards, slate
    borders/text, etc.). Instead of hand-annotating every element with `dark:`

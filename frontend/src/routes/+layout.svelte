@@ -112,10 +112,10 @@
         {#each links as l}
           <a
             href={l.href}
-            class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition
+            class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition
               {isActive(l.href)
-              ? 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}"
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700'}"
           >
             <span>{l.icon}</span>
             {l.label}
